@@ -1,0 +1,32 @@
+<svg width="400" height="120" viewBox="0 0 400 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Pillar/Column Icon -->
+  <g id="icon">
+    <!-- Top Cap (Abacus) -->
+    <rect x="25" y="20" width="50" height="5" rx="1" fill="#921300"/>
+    <!-- Capital -->
+    <path d="M30 25C30 25 30 35 50 35C70 35 70 25 70 25" stroke="#921300" stroke-width="2"/>
+    <!-- Shaft (Three flutes) -->
+    <rect x="35" y="35" width="6" height="50" rx="1" fill="#1A2B48"/>
+    <rect x="47" y="35" width="6" height="50" rx="1" fill="#1A2B48"/>
+    <rect x="59" y="35" width="6" height="50" rx="1" fill="#1A2B48"/>
+    <!-- Base -->
+    <rect x="28" y="85" width="44" height="6" rx="1" fill="#921300"/>
+    <rect x="25" y="91" width="50" height="4" rx="1" fill="#1A2B48"/>
+    
+    <!-- Balance/Scales of Justice -->
+    <path d="M50 20V10" stroke="#C5A059" stroke-width="2"/>
+    <path d="M30 15L70 15" stroke="#C5A059" stroke-width="2"/>
+    <!-- Scale Left -->
+    <path d="M30 15V22C30 22 25 28 30 28C35 28 30 22 30 22" stroke="#C5A059" stroke-width="1.5" fill="#FDF7F0"/>
+    <!-- Scale Right -->
+    <path d="M70 15V22C70 22 65 28 70 28C75 28 70 22 70 22" stroke="#C5A059" stroke-width="1.5" fill="#FDF7F0"/>
+  </g>
+
+  <!-- Brand Typography -->
+  <g id="text">
+    <!-- LEXIS -->
+    <text x="100" y="70" font-family="Georgia, serif" font-size="52" font-weight="900" fill="#1A2B48" letter-spacing="2">LEXIS</text>
+    <!-- PREMIUM LEGAL PLATFORM -->
+    <text x="102" y="95" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#C5A059" letter-spacing="4">PREMIUM LEGAL PLATFORM</text>
+  </g>
+</svg>
