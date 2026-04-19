@@ -173,18 +173,18 @@ export default function LawyerDetailPage() {
             </div>
             <div className="space-y-4">
               <div className="p-5 bg-surface-container-low/50 rounded-xl border border-outline-variant/30">
-                <div className="flex justify-between items-start mb-3">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-3 gap-y-3">
                   <div>
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
                       <span className="font-extrabold text-brand-blue font-headline text-sm">Client Terverifikasi</span>
-                      <span className="flex items-center gap-1 bg-green-100 text-green-700 px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest border border-green-200">
+                      <span className="flex items-center gap-1 bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest border border-green-200">
                         <span className="material-symbols-outlined text-[10px]" style={{fontVariationSettings: "'FILL' 1"}}>verified</span> 
                         Terverifikasi
                       </span>
                     </div>
                     <p className="text-[10px] text-on-surface-variant/70 font-bold uppercase tracking-widest">2 hari yang lalu</p>
                   </div>
-                  <div className="flex text-outline">
+                  <div className="flex text-outline -ml-1 sm:ml-0">
                     {[1, 2, 3, 4, 5].map(s => <span key={s} className="material-symbols-outlined text-sm" style={{fontVariationSettings: "'FILL' 1"}}>star</span>)}
                   </div>
                 </div>

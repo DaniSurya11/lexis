@@ -91,7 +91,7 @@ export default function HomeClient() {
           {/* Column 1: High-Impact Tech Typography */}
           <div className="relative flex flex-col items-center text-center xl:items-start xl:text-left z-20 -mt-24 md:-mt-32 xl:-mt-52">
             {/* LOCALIZED TYPOGRAPHY GLOWING PULSES (Minimalist & Abstract) */}
-            <div className="absolute inset-[-100px] pointer-events-none z-0 overflow-visible opacity-60 xl:opacity-100 mix-blend-screen">
+            <div className="absolute inset-[-100px] pointer-events-none z-0 overflow-visible hidden xl:block mix-blend-screen">
                <svg className="w-full h-full overflow-visible" viewBox="0 0 600 500" fill="none">
                  <defs>
                    <linearGradient id="typo-glow-bright" x1="0%" y1="0%" x2="100%" y2="0%">
