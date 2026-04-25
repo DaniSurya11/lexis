@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useCallback } from "react";
+import { createClient } from "@/lib/supabase";
 import { validateLogin } from "@/lib/validation";
 import SuccessModal from "@/components/SuccessModal";
 
 export default function LoginPage() {
   const router = useRouter();
+  const supabase = createClient();
   const [role, setRole] = useState("client");
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [fieldErrors, setFieldErrors] = useState({});
@@ -16,23 +18,21 @@ export default function LoginPage() {
   const [serverError, setServerError] = useState("");
   const [showModal, setShowModal] = useState(false);
 
-  // Jika sudah login (ada cookie/storage), redirect ke dashboard
+  // Jika sudah login, redirect ke dashboard
   useEffect(() => {
-    const hasAuthCookie = document.cookie
-      .split("; ")
-      .some((row) => row.startsWith("lexis_auth="));
-    const isAuth = localStorage.getItem("isAuthenticated") === "true";
-    const userRole = localStorage.getItem("userRole");
-    
-    if (hasAuthCookie || isAuth) {
-      router.replace(userRole === "lawyer" ? "/dashboard/lawyer" : "/dashboard");
-    }
-  }, [router]);
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const userRole = session.user.user_metadata?.role || "client";
+        router.replace(userRole === "lawyer" ? "/dashboard/lawyer" : "/dashboard");
+      }
+    };
+    checkUser();
+  }, [router, supabase]);
 
   const handleChange = useCallback((e) => {
     const { id, value } = e.target;
     setFormData((prev) => ({ ...prev, [id]: value }));
-    // Clear error saat user mulai mengetik
     if (fieldErrors[id]) {
       setFieldErrors((prev) => ({ ...prev, [id]: "" }));
     }
@@ -43,7 +43,6 @@ export default function LoginPage() {
     e.preventDefault();
     setServerError("");
 
-    // 1. Validasi client-side
     const result = validateLogin(formData);
     if (!result.success) {
       setFieldErrors(result.errors);
@@ -54,31 +53,30 @@ export default function LoginPage() {
     setFieldErrors({});
 
     try {
-      // ---- DUMMY LOGIN (ganti dengan fetch API nyata) ----
-      // const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({ ...result.data, role }),
-      // });
-      // if (!response.ok) throw new Error("Email atau kata sandi salah.");
-      // const { token } = await response.json();
-      // document.cookie = `lexis_auth=${token}; path=/; max-age=86400; SameSite=Lax`;
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password,
+      });
 
-      // Simulasi delay network
-      await new Promise((r) => setTimeout(r, 800));
+      if (error) throw error;
+
+      // Verifikasi apakah role yang dipilih sesuai dengan role di metadata user
+      const userRole = data.user.user_metadata?.role;
+      
+      // Jika user mencoba login ke portal yang salah, beri peringatan (opsional)
+      // Namun untuk kemudahan, kita ikuti saja role dari database
+      const finalRole = userRole || role;
 
       localStorage.setItem("isAuthenticated", "true");
-      localStorage.setItem("userRole", role);
+      localStorage.setItem("userRole", finalRole);
 
-      // Set auth cookie untuk middleware
-      document.cookie = `lexis_auth=dummy_token_${Date.now()}; path=/; max-age=86400; SameSite=Lax`;
-
-      // Tampilkan modal sukses lalu redirect
       setShowModal(true);
-      const targetPath = role === "client" ? "/dashboard" : "/dashboard/lawyer";
+      const targetPath = finalRole === "client" ? "/dashboard" : "/dashboard/lawyer";
       setTimeout(() => { window.location.href = targetPath; }, 2500);
     } catch (err) {
-      setServerError(err.message || "Terjadi kesalahan. Coba lagi.");
+      setServerError(err.message === "Invalid login credentials" 
+        ? "Email atau kata sandi salah." 
+        : err.message || "Terjadi kesalahan. Coba lagi.");
     } finally {
       setIsSubmitting(false);
     }

@@ -19,14 +19,28 @@ export default function ClientDashboardPage() {
   const [userAvatar, setUserAvatar] = useState(null);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("lexis_user");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.name) setUserName(parsed.name.split(" ")[0]);
-        if (parsed.avatar) setUserAvatar(parsed.avatar);
+    const loadUser = async () => {
+      try {
+        const { createClient } = await import("@/lib/supabase");
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          // Ambil nama terbaru dari tabel profiles (bukan auth metadata)
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name, avatar_url')
+            .eq('id', user.id)
+            .single();
+
+          const fullName = profile?.full_name || user.user_metadata?.full_name || "Pengguna";
+          setUserName(fullName.split(" ")[0]);
+          if (profile?.avatar_url) setUserAvatar(profile.avatar_url);
+        }
+      } catch (e) {
+        console.error("Failed to load user:", e);
       }
-    } catch (e) {}
+    };
+    loadUser();
   }, []);
 
   const pendingBookings = bookings.filter(b => b.status === 'pending' || b.status === 'accepted');
@@ -93,8 +107,8 @@ export default function ClientDashboardPage() {
           </div>
           <button 
             onClick={() => {
-              const b = bookings.find(bk => bk.id === activeSession.bookingId);
-              if (b) router.push(`/chat/${b.lawyerId}`);
+              const b = bookings.find(bk => bk.id === activeSession.booking_id);
+              if (b) router.push(`/chat/${b.lawyer_id}`);
             }} 
             className="bg-white text-primary px-5 py-2 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-surface transition-colors whitespace-nowrap active:scale-95"
           >
@@ -226,25 +240,28 @@ export default function ClientDashboardPage() {
                     </div>
                   ) : (
                     allActiveSessions.map(session => {
-                      const sessionBooking = bookings.find(b => b.id === session.bookingId);
+                      const sessionBooking = bookings.find(b => b.id === session.booking_id);
                       if (!sessionBooking) return null;
                       
+                      const lawyerName = sessionBooking.lawyer?.profiles?.full_name || sessionBooking.lawyerName || "Pengacara";
+                      const lawyerImage = sessionBooking.lawyerImage || "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png";
+
                       return (
                         <div key={session.id} className="bg-white p-6 rounded-2xl border border-primary/40 shadow-md shadow-primary/5 flex flex-col md:flex-row md:items-center justify-between gap-6 group hover:border-primary transition-all hover:scale-[1.01]">
                           <div className="flex items-center gap-5">
                             <div className="relative shrink-0">
-                              <Image alt={`Foto profil ${sessionBooking.lawyerName}`} className="w-14 h-14 rounded-full object-cover ring-2 ring-outline-variant/20" src={sessionBooking.lawyerImage || "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png"} width={56} height={56} unoptimized />
+                              <Image alt={`Foto profil ${lawyerName}`} className="w-14 h-14 rounded-full object-cover ring-2 ring-outline-variant/20" src={lawyerImage} width={56} height={56} unoptimized />
                               <span className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-pulse" aria-label="Online"></span>
                             </div>
                             <div>
                               <div className="flex flex-wrap items-center gap-2 mb-1">
-                                <h4 className="font-headline font-extrabold text-lg text-on-surface leading-tight tracking-tight">{sessionBooking.lawyerName}</h4>
+                                <h4 className="font-headline font-extrabold text-lg text-on-surface leading-tight tracking-tight">{lawyerName}</h4>
                                 <span className="bg-tertiary-fixed text-tertiary-container text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-widest text-ellipsis overflow-hidden max-w-[150px] whitespace-nowrap">{sessionBooking.topic}</span>
                               </div>
-                              <p className="text-xs text-on-surface-variant font-medium">Sesi dimulai pada {formatDate(session.startedAt)}</p>
+                              <p className="text-xs text-on-surface-variant font-medium">Sesi dimulai pada {formatDate(session.started_at)}</p>
                             </div>
                           </div>
-                          <Link href={`/chat/${sessionBooking.lawyerId}`} className="bg-primary text-white px-5 py-3 rounded-xl font-bold text-xs transition-all hover:bg-primary-container active:scale-95 shadow-lg shadow-primary/10 uppercase tracking-widest whitespace-nowrap text-center">
+                          <Link href={`/chat/${sessionBooking.lawyer_id}`} className="bg-primary text-white px-5 py-3 rounded-xl font-bold text-xs transition-all hover:bg-primary-container active:scale-95 shadow-lg shadow-primary/10 uppercase tracking-widest whitespace-nowrap text-center">
                             Lanjutkan Konsultasi
                           </Link>
                         </div>

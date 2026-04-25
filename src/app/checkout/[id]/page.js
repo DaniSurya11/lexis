@@ -2,27 +2,61 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { lawyersData } from "@/data/lawyers";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import ClientPaymentFlow from "./ClientPaymentFlow";
+import { createClient } from "@/lib/supabase";
 
 export default function CheckoutPage() {
   const params = useParams();
   const router = useRouter();
-  const [isChecking, setIsChecking] = useState(true);
-
-  const lawyerId = parseInt(params.id);
-  const lawyer = lawyersData.find((l) => l.id === lawyerId);
+  const supabase = createClient();
+  const [lawyer, setLawyer] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const auth = localStorage.getItem("isAuthenticated");
-    if (auth !== "true") {
-      router.replace("/login");
-    } else {
-      setIsChecking(false);
-    }
-  }, [router]);
+    const fetchLawyer = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('lawyers')
+          .select(`
+            *,
+            profiles(full_name, avatar_url, city)
+          `)
+          .eq('id', params.id)
+          .single();
+
+        if (error || !data) {
+          setLawyer(null);
+        } else {
+          setLawyer({
+            id: data.id,
+            name: data.profiles.full_name,
+            specialty: data.specialization,
+            image: data.profiles.avatar_url || "https://via.placeholder.com/150",
+            price: data.price_per_hour?.toLocaleString('id-ID') || "0",
+          });
+        }
+      } catch (err) {
+        console.error("Error fetching lawyer for checkout:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchLawyer();
+  }, [params.id, supabase]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-stone-50">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 rounded-full border-4 border-stone-200 border-t-primary animate-spin"></div>
+          <p className="text-on-surface-variant text-sm font-medium">Memuat data...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!lawyer) {
     return (
@@ -36,18 +70,6 @@ export default function CheckoutPage() {
     );
   }
 
-  if (isChecking) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-stone-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 rounded-full border-4 border-stone-200 border-t-primary animate-spin"></div>
-          <p className="text-on-surface-variant text-sm font-medium">Memverifikasi akses...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Parse price correctly assuming price in string format like "1.250.000"
   const basePrice = parseInt(lawyer.price.replace(/\./g, ""));
   const adminFee = 5000;
   const totalPrice = basePrice + adminFee;

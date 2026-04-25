@@ -6,210 +6,214 @@ const ConsultationContext = createContext();
 
 export const useConsultation = () => useContext(ConsultationContext);
 
+import { createClient } from '@/lib/supabase';
+
 export const ConsultationProvider = ({ children }) => {
+  const supabase = createClient();
   const [bookings, setBookings] = useState([]);
   const [sessions, setSessions] = useState([]);
-  const [toast, setToast] = useState(null); // { message, type: 'success' | 'info' | 'error' }
+  const [toast, setToast] = useState(null);
 
-  // Load initial data function
-  const loadData = useCallback(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const storedBookings = localStorage.getItem('lexis_bookings');
-        const storedSessions = localStorage.getItem('lexis_sessions');
-        if (storedBookings) setBookings(JSON.parse(storedBookings));
-        if (storedSessions) setSessions(JSON.parse(storedSessions));
-        console.log("[Context] Data loaded from localStorage");
-      } catch (err) {
-        console.error("[Context] Failed to load data:", err);
-      }
+  // Load data from Supabase
+  const loadData = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const userId = session.user.id;
+      const userRole = session.user.user_metadata?.role;
+
+      // Fetch bookings
+      const { data: bookingsData, error: bookingsError } = await supabase
+        .from('bookings')
+        .select(`
+          *,
+          lawyer:lawyers(
+            id,
+            profiles(full_name)
+          ),
+          client:profiles!bookings_client_id_fkey(full_name)
+        `)
+        .or(`client_id.eq.${userId},lawyer_id.eq.${userId}`)
+        .order('created_at', { ascending: false });
+
+      if (bookingsError) throw bookingsError;
+      setBookings(bookingsData);
+
+      // Fetch active sessions
+      const { data: sessionsData, error: sessionsError } = await supabase
+        .from('sessions')
+        .select('*')
+        .order('started_at', { ascending: false });
+
+      if (sessionsError) throw sessionsError;
+      setSessions(sessionsData);
+
+      console.log("[Context] Data loaded from Supabase");
+    } catch (err) {
+      console.error("[Context] Failed to load data:", err);
     }
-  }, []);
+  }, [supabase]);
 
-  // Load initial data on mount with slight delay to ensure localStorage is ready
   useEffect(() => {
     loadData();
-    // Re-run after a small delay to handle potential race conditions during redirect
-    const timer = setTimeout(loadData, 100);
-    return () => clearTimeout(timer);
-  }, [loadData]);
 
-  // Utility to persist and update state (Atomic & Functional)
-  const saveBookings = useCallback((newBookingsOrFn) => {
-    setBookings(prev => {
-      const next = typeof newBookingsOrFn === 'function' ? newBookingsOrFn(prev) : newBookingsOrFn;
-      localStorage.setItem('lexis_bookings', JSON.stringify(next));
-      return next;
-    });
-  }, []);
+    // Subscribe to real-time updates for bookings
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, payload => {
+        console.log('Change received!', payload);
+        loadData();
+      })
+      .subscribe();
 
-  const saveSessions = useCallback((newSessionsOrFn) => {
-    setSessions(prev => {
-      const next = typeof newSessionsOrFn === 'function' ? newSessionsOrFn(prev) : newSessionsOrFn;
-      localStorage.setItem('lexis_sessions', JSON.stringify(next));
-      return next;
-    });
-  }, []);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadData, supabase]);
 
-  const showToast = useCallback((message, type = 'info', propagate = true) => {
+  const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type });
-    if (propagate) {
-      localStorage.setItem('lexis_toast', JSON.stringify({ message, type, time: Date.now() }));
-    }
     setTimeout(() => {
       setToast(null);
     }, 4000);
   }, []);
 
-  // Sync data across tabs & Aggressive Polling fallback
-  const bookingsRef = React.useRef(bookings);
-  const sessionsRef = React.useRef(sessions);
-  bookingsRef.current = bookings;
-  sessionsRef.current = sessions;
-
-  const syncFromStorage = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const storedBookings = localStorage.getItem('lexis_bookings');
-      const storedSessions = localStorage.getItem('lexis_sessions');
-      if (storedBookings) {
-        const parsed = JSON.parse(storedBookings);
-        if (JSON.stringify(parsed) !== JSON.stringify(bookingsRef.current)) {
-          setBookings(parsed);
-        }
-      }
-      if (storedSessions) {
-        const parsed = JSON.parse(storedSessions);
-        if (JSON.stringify(parsed) !== JSON.stringify(sessionsRef.current)) {
-          setSessions(parsed);
-        }
-      }
-    } catch (err) {
-      console.error("[Sync] Error reading localStorage:", err);
-    }
-  }, []);
-
-  useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (!e.newValue) return;
-      if (e.key === 'lexis_bookings') {
-        try { setBookings(JSON.parse(e.newValue)); } catch (err) { console.error(err); }
-      }
-      if (e.key === 'lexis_sessions') {
-        try { setSessions(JSON.parse(e.newValue)); } catch (err) { console.error(err); }
-      }
-      if (e.key === 'lexis_toast') {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          showToast(parsed.message, parsed.type, false);
-        } catch (err) { console.error(err); }
-      }
-    };
-
-    // Polling setiap 2 detik sebagai fallback jika storage event tidak terpicu
-    const pollInterval = setInterval(syncFromStorage, 2000);
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      clearInterval(pollInterval);
-    };
-  }, [showToast, syncFromStorage]);
-
   // Actions
-  const createBooking = (lawyer) => {
-    // Validasi Dasar Data Minimal
-    if (!lawyer || !lawyer.id || !lawyer.name) {
-       console.error("Gagal membuat booking: Data pengacara tidak valid atau tidak lengkap");
-       showToast("Gagal memproses booking. Data pengacara tidak valid.", "error");
-       return null;
-    }
+  const createBooking = async (lawyer, topic = "Konsultasi Hukum") => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Silakan login terlebih dahulu");
 
-    // Hindari duplikasi sesi aktif
-    const activeExists = sessions.some(s => s.status === 'active');
-    if (activeExists) {
-      showToast("Selesaikan sesi aktif Anda sebelum membuat konsultasi baru", "error");
+      const { data, error } = await supabase
+        .from('bookings')
+        .insert([
+          {
+            client_id: session.user.id,
+            lawyer_id: lawyer.id,
+            topic: topic,
+            status: 'pending',
+          }
+        ])
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      showToast("Booking berhasil dibuat!", "success");
+      return data.id;
+    } catch (err) {
+      showToast(err.message, "error");
       return null;
     }
-
-    const newBooking = {
-      id: "bk_" + Date.now().toString(),
-      userId: "user_current", // Mock user ID
-      lawyerId: lawyer.id,
-      lawyerName: lawyer.name,
-      lawyerImage: lawyer.image || "",
-      topic: lawyer.specialty || "Konsultasi Hukum Umum",
-      status: "pending",
-      createdAt: new Date().toISOString()
-    };
-
-    // Atomic update
-    saveBookings(prev => [newBooking, ...prev]);
-    
-    console.log(`[Action] Booking berhasil dibuat: ${newBooking.id}`, newBooking);
-    showToast("Pembayaran berhasil! Menunggu konfirmasi pengacara.", "success");
-    return newBooking.id;
   };
 
-  const acceptBooking = (bookingId) => {
-    saveBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: 'accepted' } : b));
-    console.log(`[Action] Booking diterima oleh pengacara: ${bookingId}`);
-    showToast("Booking diterima. Silakan klik Mulai Sesi.", "success");
-  };
+  const acceptBooking = async (bookingId) => {
+    try {
+      // Optimistic update
+      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: 'accepted' } : b));
+      
+      const { error } = await supabase
+        .from('bookings')
+        .update({ status: 'accepted' })
+        .eq('id', bookingId);
 
-  const rejectBooking = (bookingId) => {
-    saveBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: 'cancelled' } : b));
-    console.log(`[Action] Booking ditolak: ${bookingId}`);
-    showToast("Booking telah ditolak.", "info");
-  };
-
-  const startSession = (bookingId) => {
-    // Update booking status
-    saveBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: 'active' } : b));
-
-    // Create session
-    const newSession = {
-      id: "sess_" + Date.now().toString(),
-      bookingId: bookingId,
-      status: 'active',
-      startedAt: new Date().toISOString()
-    };
-    saveSessions(prev => [newSession, ...prev]);
-    
-    console.log(`[Action] Sesi konsultasi dimulai: ${newSession.id}`);
-    showToast("Sesi dimulai! Menghubungkan ke ruang obrolan...", "success");
-  };
-
-  const endSession = (sessionId) => {
-    const currentSessions = sessions;
-    const session = currentSessions.find(s => s.id === sessionId);
-
-    // GUARD: jika session tidak ada atau sudah selesai
-    if (!session || session.status === 'finished') {
-      console.warn("Session sudah selesai atau tidak ditemukan");
-      return;
+      if (error) {
+        // Revert on error
+        await loadData();
+        throw error;
+      }
+      await loadData();
+      showToast("Booking diterima!", "success");
+    } catch (err) {
+      showToast(err.message, "error");
     }
+  };
 
-    // Update session
-    saveSessions(prev =>
-      prev.map(s =>
-        s.id === sessionId
-          ? { ...s, status: 'finished', endedAt: new Date().toISOString() }
-          : s
-      )
-    );
+  const rejectBooking = async (bookingId) => {
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({ status: 'rejected' })
+        .eq('id', bookingId);
 
-    // Update booking
-    saveBookings(prev =>
-      prev.map(b =>
-        b.id === session.bookingId
-          ? { ...b, status: 'completed' }
-          : b
-      )
-    );
+      if (error) throw error;
+      await loadData();
+      showToast("Booking ditolak.", "info");
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  };
 
-    console.log(`[Action] Sesi konsultasi diakhiri: ${sessionId}`);
-    showToast("Sesi konsultasi telah selesai.", "info");
+  const startSession = async (bookingId) => {
+    try {
+      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: 'active' } : b));
+      
+      // 1. Create session record
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('sessions')
+        .insert([
+          {
+            booking_id: bookingId,
+            status: 'active',
+          }
+        ])
+        .select()
+        .single();
+
+      if (sessionError) throw sessionError;
+
+      // 2. Update booking status
+      const { error: bookingError } = await supabase
+        .from('bookings')
+        .update({ status: 'active' })
+        .eq('id', bookingId);
+
+      if (bookingError) throw bookingError;
+
+      setSessions(prev => [sessionData, ...prev]);
+      await loadData();
+      showToast("Sesi dimulai!", "success");
+      return sessionData.id;
+    } catch (err) {
+      await loadData();
+      showToast(err.message, "error");
+      return null;
+    }
+  };
+
+  const endSession = async (sessionId) => {
+    try {
+      // 1. Get session to find booking_id
+      const { data: sessionData, error: fetchError } = await supabase
+        .from('sessions')
+        .select('booking_id')
+        .eq('id', sessionId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // 2. Update session
+      const { error: sessionError } = await supabase
+        .from('sessions')
+        .update({ status: 'completed', ended_at: new Date() })
+        .eq('id', sessionId);
+
+      if (sessionError) throw sessionError;
+
+      // 3. Update booking
+      const { error: bookingError } = await supabase
+        .from('bookings')
+        .update({ status: 'completed' })
+        .eq('id', sessionData.booking_id);
+
+      if (bookingError) throw bookingError;
+
+      await loadData();
+      showToast("Sesi selesai.", "info");
+    } catch (err) {
+      showToast(err.message, "error");
+    }
   };
 
   return (
@@ -221,7 +225,6 @@ export const ConsultationProvider = ({ children }) => {
       rejectBooking,
       startSession,
       endSession,
-      syncFromStorage,
       reloadBookings: loadData,
       showToast
     }}>

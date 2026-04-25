@@ -1,26 +1,66 @@
 "use client";
 
 import Link from "next/link";
-import { lawyersData } from "@/data/lawyers";
 import { notFound, useParams } from "next/navigation";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import ConsultationButton from "./ConsultationButton";
+import { createClient } from "@/lib/supabase";
 
 export default function LawyerDetailPage() {
   const params = useParams();
-  const lawyerId = parseInt(params.id);
-  const lawyer = lawyersData.find(l => l.id === lawyerId);
+  const supabase = createClient();
+  const [lawyer, setLawyer] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchLawyer = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('lawyers')
+          .select(`
+            *,
+            profiles(full_name, avatar_url, city)
+          `)
+          .eq('id', params.id)
+          .single();
+
+        if (error || !data) {
+          setLawyer(null);
+        } else {
+          setLawyer({
+            id: data.id,
+            name: data.profiles.full_name,
+            specialty: data.specialization,
+            rating: data.rating || 0,
+            reviews: 0,
+            experience: "5+ Tahun",
+            city: data.profiles.city || "Jakarta",
+            image: data.profiles.avatar_url || "https://via.placeholder.com/400",
+            isOnline: data.is_available,
+            status: data.is_available ? "Online" : "Offline",
+            about: data.bio,
+            price: data.price_per_hour?.toLocaleString('id-ID') || "0",
+            cases: "50+",
+            educations: [
+              { degree: "S1 Ilmu Hukum", university: "Universitas Indonesia", year: "2015" }
+            ]
+          });
+        }
+      } catch (err) {
+        console.error("Error fetching lawyer:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchLawyer();
+  }, [params.id, supabase]);
 
   useEffect(() => {
     if (!lawyer) return;
 
-    const observerOptions = {
-      root: null,
-      rootMargin: "0px",
-      threshold: 0.1,
-    };
-
+    const observerOptions = { root: null, rootMargin: "0px", threshold: 0.1 };
     const handleIntersect = (entries, observer) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
@@ -29,17 +69,24 @@ export default function LawyerDetailPage() {
         }
       });
     };
-
     const observer = new IntersectionObserver(handleIntersect, observerOptions);
     const elements = document.querySelectorAll(".reveal, .reveal-left, .reveal-right");
     elements.forEach((el) => observer.observe(el));
-
     return () => observer.disconnect();
   }, [lawyer]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface">
+        <div className="w-10 h-10 border-4 border-outline-variant border-t-primary rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   if (!lawyer) {
     notFound();
   }
+
 
   return (
     <main className="flex-grow pt-8 pb-32 md:pt-12 md:pb-16 max-w-7xl mx-auto px-6 md:px-8 w-full relative">

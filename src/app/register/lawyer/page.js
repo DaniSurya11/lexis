@@ -1,15 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase";
 import SuccessModal from "@/components/SuccessModal";
 
 export default function LawyerWizardPage() {
   const router = useRouter();
+  const supabase = createClient();
   const [step, setStep] = useState(1);
-  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [serverError, setServerError] = useState("");
   
   // Data State
   const [formData, setFormData] = useState({
@@ -47,6 +51,7 @@ export default function LawyerWizardPage() {
   const handleChange = (e) => {
     const { id, value } = e.target;
     setFormData(prev => ({ ...prev, [id]: value }));
+    setServerError("");
   };
 
   const handleFileChange = (e, targetId) => {
@@ -58,7 +63,6 @@ export default function LawyerWizardPage() {
       }
       setFormData(prev => ({ ...prev, [targetId]: file }));
       
-      // We only preview images
       if (file.type.startsWith('image/')) {
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -72,7 +76,6 @@ export default function LawyerWizardPage() {
   };
 
   const nextStep = () => {
-    // Basic validation per step
     if (step === 1 && (!formData.fullname || !formData.email || !formData.password || !formData.phone || !formData.ktp)) {
        alert("Harap lengkapi informasi dasar yang wajib");
        return;
@@ -89,19 +92,70 @@ export default function LawyerWizardPage() {
   };
   const prevStep = () => setStep(prev => prev - 1);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     if (e) e.preventDefault();
+    setIsSubmitting(true);
+    setServerError("");
     
-    // Set Login State (Dummy)
-    localStorage.setItem("isLoggedIn", "true");
-    localStorage.setItem("userRole", "lawyer");
-    localStorage.setItem("userName", formData.fullname.split(' ')[0] || "Advokat");
+    try {
+      // 1. Sign up user di Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.fullname,
+            role: "lawyer",
+          }
+        }
+      });
 
-    setShowModal(true);
-    // Success redirect directly to dashboard after show success screen
-    setTimeout(() => {
-        router.push("/dashboard/lawyer");
-    }, 4000);
+      if (authError) throw authError;
+
+      // 2. Insert ke tabel profiles
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert([
+          {
+            id: authData.user.id,
+            full_name: formData.fullname,
+            role: 'lawyer',
+            updated_at: new Date(),
+          }
+        ]);
+
+      if (profileError) throw profileError;
+
+      // 3. Insert ke tabel lawyers
+      const { error: lawyerError } = await supabase
+        .from('lawyers')
+        .insert([
+          {
+            id: authData.user.id,
+            specialization: formData.specialty,
+            bio: formData.bio,
+            price_per_hour: 0, // Default, bisa diupdate nanti
+          }
+        ]);
+
+      if (lawyerError) throw lawyerError;
+
+      // TODO: Unggah berkas ke Supabase Storage (opsional untuk MVP lokal)
+
+      localStorage.setItem("isAuthenticated", "true");
+      localStorage.setItem("userRole", "lawyer");
+      localStorage.setItem("userName", formData.fullname.split(' ')[0] || "Advokat");
+
+      setShowModal(true);
+      setTimeout(() => {
+          router.push("/dashboard/lawyer");
+      }, 4000);
+    } catch (err) {
+      setServerError(err.message || "Gagal melakukan pendaftaran.");
+      alert(err.message || "Gagal melakukan pendaftaran.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // UI Helper for Steps

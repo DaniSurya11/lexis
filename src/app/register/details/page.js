@@ -4,11 +4,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase";
 import SuccessModal from "@/components/SuccessModal";
 import { validateRegisterClient, passwordStrength } from "@/lib/validation";
 
 export default function ClientDetailsPage() {
   const router = useRouter();
+  const supabase = createClient();
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -62,23 +64,37 @@ export default function ClientDetailsPage() {
     setFieldErrors({});
 
     try {
-      // ---- DUMMY REGISTER (ganti dengan fetch API nyata) ----
-      // const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/register/client`, {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify(result.data),
-      // });
-      // if (!response.ok) throw new Error("Registrasi gagal.");
+      // 1. Sign up user di Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.name,
+            role: "client",
+          }
+        }
+      });
 
-      await new Promise((r) => setTimeout(r, 1000));
+      if (authError) throw authError;
 
-      localStorage.setItem("isLoggedIn", "true");
+      // 2. Insert detail ke tabel profiles
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert([
+          {
+            id: authData.user.id,
+            full_name: formData.name,
+            role: 'client',
+            updated_at: new Date(),
+          }
+        ]);
+
+      if (profileError) throw profileError;
+
       localStorage.setItem("isAuthenticated", "true");
       localStorage.setItem("userRole", "client");
-      localStorage.setItem("userName", result.data.name.split(" ")[0] || "User");
-
-      // Set auth cookie supaya middleware tidak memblokir akses ke /dashboard
-      document.cookie = `lexis_auth=dummy_token_${Date.now()}; path=/; max-age=86400; SameSite=Lax`;
+      localStorage.setItem("userName", formData.name.split(" ")[0]);
 
       setShowModal(true);
       setTimeout(() => router.push("/dashboard"), 3000);

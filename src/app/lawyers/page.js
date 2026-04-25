@@ -2,11 +2,13 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useMemo, useEffect, useRef } from "react";
-import { lawyersData } from "@/data/lawyers";
+import { useState, useMemo, useEffect } from "react";
+import { createClient } from "@/lib/supabase";
 import { SkeletonCard } from "@/components/SkeletonLoader";
 
 export default function LawyersPage() {
+  const supabase = createClient();
+  const [lawyers, setLawyers] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSpecialties, setSelectedSpecialties] = useState([]);
   const [selectedExperience, setSelectedExperience] = useState("");
@@ -15,39 +17,59 @@ export default function LawyersPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [isLoading, setIsLoading] = useState(true);
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
-  const isFirstMount = useRef(true);
+
+  // Fetch lawyers from Supabase
+  useEffect(() => {
+    const fetchLawyers = async () => {
+      setIsLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('lawyers')
+          .select(`
+            *,
+            profiles(full_name, avatar_url, city)
+          `);
+        
+        if (error) throw error;
+        
+        // Transform data to match previous structure
+        const transformedData = data.map(l => ({
+          id: l.id,
+          name: l.profiles.full_name,
+          specialty: l.specialization,
+          rating: l.rating || 0,
+          reviews: 0, // TODO: add reviews table
+          experience: "5+ Tahun", // Placeholder
+          city: l.profiles.city || "Jakarta",
+          image: l.profiles.avatar_url || "https://via.placeholder.com/150",
+          isOnline: l.is_available,
+          status: l.is_available ? "Online" : "Offline",
+          about: l.bio,
+        }));
+        
+        setLawyers(transformedData);
+      } catch (err) {
+        console.error("Error fetching lawyers:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchLawyers();
+  }, [supabase]);
 
   const cities = useMemo(() => {
-    const uniqueCities = ["Semua Kota", ...new Set(lawyersData.map(l => l.city))];
+    const uniqueCities = ["Semua Kota", ...new Set(lawyers.map(l => l.city))];
     return uniqueCities;
-  }, []);
-
-  // Simulasi loading: saat pertama mount atau filter berubah
-  useEffect(() => {
-    if (isFirstMount.current) {
-      // Initial page load — lebih lama untuk efek premium
-      const timer = setTimeout(() => {
-        setIsLoading(false);
-        isFirstMount.current = false;
-      }, 1200);
-      return () => clearTimeout(timer);
-    } else {
-      // Filter change — lebih cepat
-      setIsLoading(true);
-      const timer = setTimeout(() => setIsLoading(false), 600);
-      return () => clearTimeout(timer);
-    }
-  }, [searchQuery, selectedSpecialties, selectedCity, selectedExperience, minRating, statusFilter]);
+  }, [lawyers]);
 
   const filteredLawyers = useMemo(() => {
-    return lawyersData.filter((lawyer) => {
-      // Search Filter
+    return lawyers.filter((lawyer) => {
       const matchesSearch = lawyer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           lawyer.specialty.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           lawyer.city.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
 
-      // Specialty Filter
       if (selectedSpecialties.length > 0 && !selectedSpecialties.includes("Semua Bidang")) {
         const matchesSpecialty = selectedSpecialties.some(spec => {
           const normalizedSpec = spec.replace("Hukum ", "").toLowerCase();
@@ -57,24 +79,14 @@ export default function LawyersPage() {
         if (!matchesSpecialty) return false;
       }
 
-      // City Filter
       if (selectedCity !== "Semua Kota" && lawyer.city !== selectedCity) return false;
-
-      // Experience Filter
-      const expYears = parseInt(lawyer.experience);
-      if (selectedExperience === "0-5" && (expYears < 0 || expYears > 5)) return false;
-      if (selectedExperience === "5-10" && (expYears < 5 || expYears > 10)) return false;
-      if (selectedExperience === "10+" && expYears < 10) return false;
-
-      // Rating Filter
+      
       if (lawyer.rating < minRating) return false;
-
-      // Status Filter
       if (statusFilter === "online" && !lawyer.isOnline) return false;
 
       return true;
     });
-  }, [searchQuery, selectedSpecialties, selectedCity, selectedExperience, minRating, statusFilter]);
+  }, [lawyers, searchQuery, selectedSpecialties, selectedCity, minRating, statusFilter]);
 
 
   const handleSpecialtyChange = (specialty) => {

@@ -2,22 +2,89 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import ComingSoonAction from "@/components/ComingSoonAction";
+import { createClient } from "@/lib/supabase";
 
 export default function UserProfilePage() {
+  const supabase = createClient();
+  const [isLoading, setIsLoading] = useState(true);
   const [formData, setFormData] = useState({
-    name: "Julian",
-    email: "julian@lexis.com",
-    phone: "+62 812 3456 7890",
-    address: "Jl. Sudirman No. 123, Jakarta Selatan",
+    name: "",
+    email: "",
+    phone: "",
+    address: "",
     interests: ["Corporate Law", "Digital Property", "Venture Capital"]
   });
 
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [avatarSrc, setAvatarSrc] = useState("https://lh3.googleusercontent.com/aida-public/AB6AXuCWlCtSg7SfE1nmkRnz5Gd67AR34YiyFumONQx0kShYfm-299M9SDgxdqfT9SvatbbkkqMffptBh6w_WeSInKunkJ8lGPpy9Ibpbk63QHvSBOSpEDcp4_F4X3oxckM_iwvtG49B3-DvCP139_7x3NRgJmRQ0osWqT6u6qTVzxoEGPxFYYKtSQVtGHjxdKLuAybXS67m8Jv7msHaT0S1eg_DI6n95AZe98-kgNOy3BfncI7ov9EAxUQ91G_sYvaR_Z3D7fCh4gZkmng");
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        setFormData({
+          name: profile?.full_name || user.user_metadata?.full_name || "",
+          email: user.email || "",
+          phone: profile?.phone || "",
+          address: profile?.city || "",
+          interests: ["Corporate Law", "Digital Property", "Venture Capital"]
+        });
+
+        if (profile?.avatar_url) setAvatarSrc(profile.avatar_url);
+      } catch (e) {
+        console.error("Failed to load profile:", e);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadProfile();
+  }, [supabase]);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: formData.name,
+          city: formData.address,
+          updated_at: new Date(),
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+      setIsEditing(false);
+    } catch (e) {
+      console.error("Failed to save profile:", e);
+      alert("Gagal menyimpan profil: " + e.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEditToggle = () => {
+    if (isEditing) {
+      handleSave();
+    } else {
+      setIsEditing(true);
+    }
+  };
 
   const handleAvatarChange = (e) => {
     const file = e.target.files?.[0];
@@ -89,10 +156,11 @@ export default function UserProfilePage() {
             
             <div className="md:ml-auto flex gap-3">
                <button 
-                 onClick={() => setIsEditing(!isEditing)}
-                 className="bg-primary text-white px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-primary-container transition-all active:scale-95 shadow-lg shadow-primary/10"
+                 onClick={handleEditToggle}
+                 disabled={isSaving}
+                 className="bg-primary text-white px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-primary-container transition-all active:scale-95 shadow-lg shadow-primary/10 disabled:opacity-50"
                >
-                 {isEditing ? "Simpan Perubahan" : "Edit Profil"}
+                 {isSaving ? "Menyimpan..." : isEditing ? "Simpan Perubahan" : "Edit Profil"}
                </button>
             </div>
           </section>

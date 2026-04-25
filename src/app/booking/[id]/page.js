@@ -1,16 +1,20 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import ComingSoonAction from "@/components/ComingSoonAction";
 import { useConsultation } from "@/context/ConsultationContext";
 import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase";
 
 export default function BookingDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const supabase = createClient();
   const { bookings } = useConsultation();
   const [booking, setBooking] = useState(null);
+  const [lawyerInfo, setLawyerInfo] = useState(null);
 
   const bookingId = params.id;
 
@@ -25,6 +29,25 @@ export default function BookingDetailPage() {
     }
   }, [bookings, bookingId, router]);
 
+  // Fetch lawyer info when booking is found
+  useEffect(() => {
+    if (!booking?.lawyer_id) return;
+    const fetchLawyer = async () => {
+      const { data } = await supabase
+        .from('lawyers')
+        .select('*, profiles(full_name, avatar_url)')
+        .eq('id', booking.lawyer_id)
+        .single();
+      if (data) {
+        setLawyerInfo({
+          name: data.profiles.full_name,
+          image: data.profiles.avatar_url || "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png",
+        });
+      }
+    };
+    fetchLawyer();
+  }, [booking, supabase]);
+
   if (!booking) {
     return (
       <div className="min-h-screen bg-surface flex flex-col items-center justify-center">
@@ -34,7 +57,7 @@ export default function BookingDetailPage() {
   }
 
   // Formatting date
-  const dateObj = new Date(booking.createdAt);
+  const dateObj = new Date(booking.created_at);
   const appointmentDate = dateObj.toLocaleDateString("id-ID", {
     day: "numeric",
     month: "short",
@@ -47,6 +70,9 @@ export default function BookingDetailPage() {
 
   const isPending = booking.status === 'pending' || booking.status === 'accepted';
   const isActive = booking.status === 'active';
+
+  const lawyerName = lawyerInfo?.name || booking.topic || "Pengacara";
+  const lawyerImage = lawyerInfo?.image || "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png";
 
   return (
     <div className="bg-surface text-on-surface min-h-screen flex flex-col font-body">
@@ -110,7 +136,7 @@ export default function BookingDetailPage() {
             <div className="p-8 pb-4 bg-surface-container-lowest flex justify-between items-center border-b border-outline-variant/20 border-dashed">
                <div>
                   <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1">Tiket Booking</p>
-                  <p className="text-sm font-bold text-on-surface">#{booking.id}</p>
+                  <p className="text-sm font-bold text-on-surface">#{booking.id.slice(-8).toUpperCase()}</p>
                </div>
                <div className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest
                  ${isPending ? 'bg-orange-100 text-orange-700' : 
@@ -125,11 +151,11 @@ export default function BookingDetailPage() {
             <div className="p-8">
               <div className="flex flex-col sm:flex-row gap-6 items-start sm:items-center">
                 <div className="w-20 h-20 shrink-0 relative">
-                  <Image alt={booking.lawyerName} fill className="object-cover rounded-xl shadow border border-outline-variant/20" src={booking.lawyerImage || "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png"} sizes="80px" />
+                  <Image alt={lawyerName} fill className="object-cover rounded-xl shadow border border-outline-variant/20" src={lawyerImage} sizes="80px" unoptimized />
                   {isActive && <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></span>}
                 </div>
                 <div>
-                  <h2 className="font-headline font-extrabold text-2xl text-on-surface leading-tight mb-1">{booking.lawyerName}</h2>
+                  <h2 className="font-headline font-extrabold text-2xl text-on-surface leading-tight mb-1">{lawyerName}</h2>
                   <p className="text-primary text-[11px] font-black uppercase tracking-wider mb-2">{booking.topic}</p>
                   <div className="flex gap-4 mt-3">
                      <div className="flex flex-col">
@@ -148,7 +174,7 @@ export default function BookingDetailPage() {
                      <p className="text-xs text-orange-800 font-medium">Halaman otomatis diperbarui saat pengacara memulai sesi...</p>
                   </div>
                ) : isActive ? (
-                  <Link href={`/chat/${booking.lawyerId}`} className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-[#680b00] text-white py-4 rounded-xl font-bold text-base shadow-lg shadow-primary/20 hover:translate-y-[-2px] active:translate-y-[0] transition-all duration-200 group">
+                  <Link href={`/chat/${booking.lawyer_id}`} className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-[#680b00] text-white py-4 rounded-xl font-bold text-base shadow-lg shadow-primary/20 hover:translate-y-[-2px] active:translate-y-[0] transition-all duration-200 group">
                     <span>Masuk Ruang Obrolan</span>
                     <span className="material-symbols-outlined text-lg group-hover:translate-x-1 transition-transform">arrow_forward</span>
                   </Link>

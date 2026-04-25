@@ -4,9 +4,11 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import SuccessModal from "@/components/SuccessModal";
+import { createClient } from "@/lib/supabase";
 
 export default function LogoutAction({ children, className }) {
   const router = useRouter();
+  const supabase = createClient();
   const [showConfirm, setShowConfirm] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -24,20 +26,18 @@ export default function LogoutAction({ children, className }) {
     setShowConfirm(false);
   };
 
-  const confirmLogout = () => {
-    // Tutup dialog konfirmasi
+  const confirmLogout = async () => {
     setShowConfirm(false);
 
-    // Bersihkan semua state autentikasi
+    // Sign out dari Supabase (menghapus sesi & cookies)
+    await supabase.auth.signOut();
+
+    // Bersihkan localStorage fallback
     localStorage.removeItem("isAuthenticated");
     localStorage.removeItem("userRole");
     localStorage.removeItem("isLoggedIn");
     localStorage.removeItem("userName");
 
-    // Hapus auth cookie agar middleware tahu user sudah logout
-    document.cookie = "lexis_auth=; path=/; max-age=0; SameSite=Lax";
-
-    // Tampilkan success modal konsisten dengan Login
     setShowSuccess(true);
     setTimeout(() => {
       window.location.href = "/login";

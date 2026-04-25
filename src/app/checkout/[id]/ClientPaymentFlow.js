@@ -13,7 +13,7 @@ export default function ClientPaymentFlow({ lawyer }) {
 
   const hasActiveSession = sessions.some(s => s.status === 'active');
 
-  const handlePayment = () => {
+  const handlePayment = async () => {
     if (hasActiveSession) {
       showToast("Selesaikan sesi aktif Anda sebelum membuat konsultasi baru", "error");
       return;
@@ -21,19 +21,21 @@ export default function ClientPaymentFlow({ lawyer }) {
     
     console.log("[Payment] Memulai proses pembayaran untuk lawyer:", lawyer.id);
     setIsProcessing(true);
-    // Simulate network delay
-    setTimeout(() => {
-      setIsProcessing(false);
-      const bookingId = createBooking(lawyer);
+
+    try {
+      const bookingId = await createBooking(lawyer);
       
       if (bookingId) {
         setShowPopup(true);
-        // Auto redirect after 2.5 seconds
         setTimeout(() => {
           router.push(`/payment-success/${bookingId}`);
         }, 2500);
       }
-    }, 1000);
+    } catch (err) {
+      console.error("Payment error:", err);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (

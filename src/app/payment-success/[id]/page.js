@@ -4,22 +4,23 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useConsultation } from "@/context/ConsultationContext";
 import { useEffect, useState, useRef } from "react";
-import { lawyersData } from "@/data/lawyers";
+import { createClient } from "@/lib/supabase";
 
 export default function PaymentSuccessPage() {
   const { id } = useParams();
   const router = useRouter();
+  const supabase = createClient();
   const { bookings } = useConsultation();
   const [booking, setBooking] = useState(null);
+  const [lawyerInfo, setLawyerInfo] = useState(null);
   const [countdown, setCountdown] = useState(8);
   const [showContent, setShowContent] = useState(false);
   const foundRef = useRef(false);
 
-  // Load booking data — try from context AND localStorage
+  // Load booking data from context or directly from Supabase
   useEffect(() => {
     if (foundRef.current) return;
 
-    // 1. Try from context
     const fromContext = bookings.find(b => b.id === id);
     if (fromContext) {
       setBooking(fromContext);
@@ -28,46 +29,65 @@ export default function PaymentSuccessPage() {
       return;
     }
 
-    // 2. Try directly from localStorage
-    if (typeof window !== 'undefined') {
+    // Try fetching directly from Supabase
+    const fetchBooking = async () => {
       try {
-        const stored = JSON.parse(localStorage.getItem('lexis_bookings') || '[]');
-        const fromStorage = stored.find(b => b.id === id);
-        if (fromStorage) {
-          setBooking(fromStorage);
+        const { data, error } = await supabase
+          .from('bookings')
+          .select('*')
+          .eq('id', id)
+          .single();
+
+        if (data) {
+          setBooking(data);
           foundRef.current = true;
           setTimeout(() => setShowContent(true), 100);
-          return;
         }
       } catch (err) {
         console.error('[PaymentSuccess] Error:', err);
       }
-    }
-  }, [bookings, id]);
+    };
+    fetchBooking();
+  }, [bookings, id, supabase]);
+
+  // Fetch lawyer info when booking is found
+  useEffect(() => {
+    if (!booking?.lawyer_id) return;
+
+    const fetchLawyer = async () => {
+      const { data } = await supabase
+        .from('lawyers')
+        .select('*, profiles(full_name, avatar_url)')
+        .eq('id', booking.lawyer_id)
+        .single();
+
+      if (data) {
+        setLawyerInfo({
+          name: data.profiles.full_name,
+          image: data.profiles.avatar_url,
+          price: data.price_per_hour || 500000,
+        });
+      }
+    };
+    fetchLawyer();
+  }, [booking, supabase]);
 
   // Countdown & auto-redirect
   useEffect(() => {
     if (!booking) return;
     const timer = setInterval(() => {
       setCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
+        if (prev <= 1) { clearInterval(timer); return 0; }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(timer);
   }, [booking]);
 
-  // Redirect when countdown reaches 0
   useEffect(() => {
-    if (countdown === 0 && booking) {
-      router.push('/dashboard');
-    }
+    if (countdown === 0 && booking) router.push('/dashboard');
   }, [countdown, booking, router]);
 
-  // Redirect fallback after 5s if no booking found
   useEffect(() => {
     const fallback = setTimeout(() => {
       if (!foundRef.current) router.push('/dashboard');
@@ -75,8 +95,7 @@ export default function PaymentSuccessPage() {
     return () => clearTimeout(fallback);
   }, [router]);
 
-  const lawyer = booking ? lawyersData.find(l => l.id === booking.lawyerId) : null;
-  const basePrice = lawyer ? parseInt(lawyer.price.replace(/\./g, "")) : 500000;
+  const basePrice = lawyerInfo?.price || 500000;
   const adminFee = 5000;
   const total = basePrice + adminFee;
   const formatRupiah = (n) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(n);
@@ -147,8 +166,8 @@ export default function PaymentSuccessPage() {
             <div className="bg-stone-50 rounded-2xl p-5 border border-stone-100">
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-14 h-14 rounded-xl overflow-hidden bg-stone-200 shrink-0 shadow-sm border border-stone-200">
-                  {lawyer ? (
-                    <img src={lawyer.image} alt={lawyer.name} className="w-full h-full object-cover" />
+                  {lawyerInfo?.image ? (
+                    <img src={lawyerInfo.image} alt={lawyerInfo.name} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full bg-primary/10 flex items-center justify-center">
                       <span className="material-symbols-outlined text-primary">person</span>
@@ -156,7 +175,7 @@ export default function PaymentSuccessPage() {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-stone-900 text-sm truncate">{booking.lawyerName}</h3>
+                  <h3 className="font-bold text-stone-900 text-sm truncate">{lawyerInfo?.name || booking.topic}</h3>
                   <p className="text-[10px] text-primary uppercase tracking-widest font-black mt-0.5">{booking.topic}</p>
                   <p className="text-[10px] text-stone-500 mt-1">
                     {bookingDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}

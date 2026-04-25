@@ -6,18 +6,47 @@ import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import { useConsultation } from "@/context/ConsultationContext";
+import { createClient } from "@/lib/supabase";
 
 export default function LawyerDashboardPage() {
   const router = useRouter();
-  const { bookings, sessions, acceptBooking, rejectBooking, startSession, endSession, syncFromStorage, reloadBookings } = useConsultation();
+  const { bookings, sessions, acceptBooking, rejectBooking, startSession, endSession, reloadBookings } = useConsultation();
   const [processingId, setProcessingId] = useState(null);
   const [mounted, setMounted] = useState(false);
+  const [lawyerName, setLawyerName] = useState("Panel Pengacara");
+  const [lawyerTitle, setLawyerTitle] = useState("Senior Partner");
+  const [lawyerAvatar, setLawyerAvatar] = useState("https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png");
+  const supabase = createClient();
 
-  // Hydration Guard + Immediate sync dari localStorage saat mount
+  // Hydration Guard + Load user info
   useEffect(() => {
     setMounted(true);
-    if (reloadBookings) reloadBookings(); // Paksa sinkronisasi data saat pertama kali buka dashboard
-  }, [reloadBookings]);
+    if (reloadBookings) reloadBookings();
+
+    const loadLawyerInfo = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Fetch profile AND lawyer specialization
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name, avatar_url, lawyers(specialization)')
+          .eq('id', user.id)
+          .single();
+          
+        if (profile?.full_name) setLawyerName(profile.full_name);
+        if (profile?.avatar_url) setLawyerAvatar(profile.avatar_url);
+        
+        // Cek jika ada data specialization di join lawyers
+        if (profile?.lawyers?.[0]?.specialization) {
+           setLawyerTitle(profile.lawyers[0].specialization);
+        } else if (profile?.lawyers?.specialization) {
+           // Tergantung bagaimana PostgREST mengembalikan 1:1 join
+           setLawyerTitle(profile.lawyers.specialization);
+        }
+      }
+    };
+    loadLawyerInfo();
+  }, [reloadBookings, supabase]);
 
   // Jika belum mounted (SSR), return null untuk menghindari hydration error
   if (!mounted) return null;
@@ -29,9 +58,8 @@ export default function LawyerDashboardPage() {
 
   const handleAction = async (id, actionFn) => {
     setProcessingId(id);
-    // Simulate slight delay for professional feel
     await new Promise(resolve => setTimeout(resolve, 600));
-    actionFn(id);
+    await actionFn(id); // Ensure we wait for the mutation and loadData to finish
     setProcessingId(null);
   };
 
@@ -98,13 +126,13 @@ export default function LawyerDashboardPage() {
               </div>
               <div className="flex items-center gap-4 pl-6 border-l border-outline-variant/30">
                 <div className="text-right hidden sm:block">
-                  <p className="text-sm font-extrabold text-on-surface">Panel Pengacara</p>
-                  <p className="text-[9px] text-tertiary-container bg-tertiary-fixed/50 px-2 py-0.5 rounded uppercase tracking-widest font-black inline-block mt-0.5">Senior Partner</p>
+                  <p className="text-sm font-extrabold text-on-surface">{lawyerName}</p>
+                  <p className="text-[9px] text-tertiary-container bg-tertiary-fixed/50 px-2 py-0.5 rounded uppercase tracking-widest font-black inline-block mt-0.5">{lawyerTitle}</p>
                 </div>
                 <Image 
-                  alt="Foto profil pengacara" 
+                  alt={`Foto profil ${lawyerName}`} 
                   className="w-10 h-10 rounded-xl object-cover shadow-sm ring-1 ring-outline-variant/50" 
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuBlg7lzWm8ddUQWPDUVOsvt08nYElOWxGc4h6V21fcvOWaY6MZg5rbG0TtpeEs3N_EPZT6Ijc_It9KHu1Xcq3i-ZR-isSynhZGN_ZdfWBLU8CIb3EpG14kJSVbOLsb3xaVS893q6YFMe_8xwjyHgFGjgwoTN2VDvO_Vqx6DKowTT4mT5cp1DgEqRkPCSzHcECEtxuaJEeen9skllHYx6evMdErJ7b3uTHw4IO-yBmjchUF_qeqsBkRL9r9_KK_LZ7bmLnwz4te1NZM"
+                  src={lawyerAvatar}
                   width={40}
                   height={40}
                   unoptimized
@@ -172,19 +200,21 @@ export default function LawyerDashboardPage() {
                     </div>
                   ) : (
                     activeSessions.map((session) => {
-                      const sessionBooking = bookings.find(b => b.id === session.bookingId);
+                      const sessionBooking = bookings.find(b => b.id === session.booking_id);
                       if (!sessionBooking) return null;
+
+                      const clientName = sessionBooking.client?.full_name || sessionBooking.clientName || `Klien (${sessionBooking.id.slice(-4)})`;
 
                       return (
                         <div key={session.id} className="bg-white p-6 rounded-2xl border border-tertiary/40 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 group hover:border-tertiary transition-all hover:scale-[1.01]">
                           <div className="flex items-center gap-5">
                             <div className="relative shrink-0">
-                              <Image alt="Foto profil klien" className="w-14 h-14 rounded-full object-cover ring-2 ring-outline-variant/20" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD-eMz0D6ySZRRlwRdZE3UsCJrxAFeCFC909DkY60HTQN4ZlYKjBTBX0kT3e9N2jziji642EqUnCNnNCaFckBMWfKhsEv4xsrdGjSAEMEC8BHnWfIJBY4Tz8TVCPo_yw0g5G9eayCoif2dy6XSgasNTtzSEYNOhzu_ahZNDhC4OzqemLX_i0mfbqT7AsiSINkrBsyDi0NwzJzsw7UxkaDbatDRIxYXE-SxCt9ZTQYL9vosc-jmXNxXBwqXdLqie6Z2E8pEV0H6QJZk" width={56} height={56} unoptimized/>
+                              <Image alt="Foto profil klien" className="w-14 h-14 rounded-full object-cover ring-2 ring-outline-variant/20" src="https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png" width={56} height={56} unoptimized/>
                               <span className="absolute bottom-0 right-0 w-4 h-4 bg-tertiary border-2 border-white rounded-full animate-pulse" aria-label="Online"></span>
                             </div>
                             <div>
                               <h4 className="font-headline font-extrabold text-lg text-on-surface leading-tight tracking-tight mb-1">
-                                Klien ({sessionBooking.id.slice(-4)})
+                                {clientName}
                               </h4>
                               <p className="text-xs text-on-surface-variant font-medium">{sessionBooking.topic} • <span className="text-tertiary font-bold uppercase tracking-widest text-[9px]">Online</span></p>
                             </div>
@@ -197,7 +227,7 @@ export default function LawyerDashboardPage() {
                             >
                               {processingId === session.id ? 'Memproses...' : 'Akhiri Konsultasi'}
                             </button>
-                            <Link href={`/chat/${sessionBooking.lawyerId}`} className="w-full md:w-auto bg-tertiary text-white hover:bg-[#20368a] px-5 py-3 rounded-xl font-bold text-xs transition-all shadow-sm uppercase tracking-widest whitespace-nowrap text-center active:scale-95 hover:shadow-lg">
+                            <Link href={`/chat/${sessionBooking.lawyer_id}`} className="w-full md:w-auto bg-tertiary text-white hover:bg-[#20368a] px-5 py-3 rounded-xl font-bold text-xs transition-all shadow-sm uppercase tracking-widest whitespace-nowrap text-center active:scale-95 hover:shadow-lg">
                               Masuk Ruang
                             </Link>
                           </div>
@@ -227,7 +257,7 @@ export default function LawyerDashboardPage() {
                            </div>
                            <div>
                               <p className="font-extrabold text-sm">Booking #{b.id.slice(-6)}</p>
-                              <p className="text-[10px] text-on-surface-variant uppercase tracking-widest mt-0.5">{b.topic} • {formatDate(b.createdAt)}</p>
+                              <p className="text-[10px] text-on-surface-variant uppercase tracking-widest mt-0.5">{b.topic} • {formatDate(b.created_at)}</p>
                            </div>
                         </div>
                         <button 
