@@ -21,10 +21,14 @@ export default function LoginPage() {
   // Jika sudah login, redirect ke dashboard
   useEffect(() => {
     const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        const userRole = session.user.user_metadata?.role || "client";
-        router.replace(userRole === "lawyer" ? "/dashboard/lawyer" : "/dashboard");
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          const userRole = session.user.user_metadata?.role || "client";
+          router.replace(userRole === "lawyer" ? "/dashboard/lawyer" : "/dashboard");
+        }
+      } catch {
+        // Supabase unreachable — stay on login page
       }
     };
     checkUser();

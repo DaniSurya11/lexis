@@ -85,6 +85,8 @@ export default function ClientDetailsPage() {
           {
             id: authData.user.id,
             full_name: formData.name,
+            phone: formData.phone,
+            city: formData.address,
             role: 'client',
             updated_at: new Date(),
           }

@@ -1,0 +1,1 @@
+SELECT phone FROM profiles LIMIT 1;

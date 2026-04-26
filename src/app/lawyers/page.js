@@ -27,7 +27,8 @@ export default function LawyersPage() {
           .from('lawyers')
           .select(`
             *,
-            profiles(full_name, avatar_url, city)
+            profiles(full_name, avatar_url, city),
+            reviews(id)
           `);
         
         if (error) throw error;
@@ -38,7 +39,7 @@ export default function LawyersPage() {
           name: l.profiles.full_name,
           specialty: l.specialization,
           rating: l.rating || 0,
-          reviews: 0, // TODO: add reviews table
+          reviews: l.reviews?.length || 0,
           experience: "5+ Tahun", // Placeholder
           city: l.profiles.city || "Jakarta",
           image: l.profiles.avatar_url || "https://via.placeholder.com/150",

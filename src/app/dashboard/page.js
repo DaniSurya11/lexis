@@ -4,9 +4,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import DashboardSidebar from "@/components/DashboardSidebar";
-import DarkModeToggle from "@/components/DarkModeToggle";
+
+import LogoutAction from "@/components/LogoutAction";
 import ComingSoonAction from "@/components/ComingSoonAction";
+import NotificationsDropdown from "@/components/NotificationsDropdown";
 import { useConsultation } from "@/context/ConsultationContext";
 
 export default function ClientDashboardPage() {
@@ -17,6 +18,7 @@ export default function ClientDashboardPage() {
   const [showRedirectBanner, setShowRedirectBanner] = useState(false);
   const [userName, setUserName] = useState("Pengguna");
   const [userAvatar, setUserAvatar] = useState(null);
+  const [userId, setUserId] = useState(null);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -25,6 +27,7 @@ export default function ClientDashboardPage() {
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
+          setUserId(user.id);
           // Ambil nama terbaru dari tabel profiles (bukan auth metadata)
           const { data: profile } = await supabase
             .from('profiles')
@@ -35,6 +38,18 @@ export default function ClientDashboardPage() {
           const fullName = profile?.full_name || user.user_metadata?.full_name || "Pengguna";
           setUserName(fullName.split(" ")[0]);
           if (profile?.avatar_url) setUserAvatar(profile.avatar_url);
+
+          // Cek apakah user adalah pengacara, jika ya, redirect ke dashboard pengacara
+          const { data: lawyerData } = await supabase
+            .from('lawyers')
+            .select('id')
+            .eq('id', user.id)
+            .single();
+            
+          if (lawyerData) {
+            router.push('/dashboard/lawyer');
+            return;
+          }
         }
       } catch (e) {
         console.error("Failed to load user:", e);
@@ -94,7 +109,7 @@ export default function ClientDashboardPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-surface w-full">
+    <>
       {/* Auto Redirect Banner */}
       {showRedirectBanner && activeSession && (
         <div className="fixed top-0 left-0 w-full bg-primary text-white z-[100] px-4 py-3 flex items-center justify-between shadow-xl animate-in slide-in-from-top flex-col sm:flex-row gap-4">
@@ -117,10 +132,7 @@ export default function ClientDashboardPage() {
         </div>
       )}
 
-      {/* DashboardSidebar — Reusable Component */}
-      <DashboardSidebar role="client" />
 
-      <div className="md:pl-64 flex-1 flex flex-col min-h-screen">
         {/* TopAppBar */}
         <header className="bg-surface/80 backdrop-blur-md text-primary font-headline tracking-tight top-0 sticky z-30 border-b border-outline-variant/30 mt-14 md:mt-0">
           <div className="max-w-7xl mx-auto px-8 py-4 flex justify-between items-center w-full">
@@ -145,14 +157,10 @@ export default function ClientDashboardPage() {
             </div>
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-2">
-                <DarkModeToggle />
-                <button className="text-on-surface-variant hover:bg-surface-container-low p-2 rounded-full transition-colors relative" aria-label="Notifikasi">
-                  <span className="material-symbols-outlined" aria-hidden="true">notifications</span>
-                  <span className="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full" aria-label="Ada notifikasi baru"></span>
-                </button>
-                <button className="text-on-surface-variant hover:bg-surface-container-low p-2 rounded-full transition-colors" aria-label="Pengaturan">
+                <NotificationsDropdown userId={userId} />
+                <Link href="/dashboard/profile" className="text-on-surface-variant hover:bg-surface-container-low p-2 rounded-full transition-colors" aria-label="Pengaturan">
                   <span className="material-symbols-outlined" aria-hidden="true">settings</span>
-                </button>
+                </Link>
               </div>
               <div className="flex items-center gap-4 pl-6 border-l border-outline-variant/30">
                 <div className="text-right hidden sm:block">
@@ -290,16 +298,43 @@ export default function ClientDashboardPage() {
                     </div>
                   ) : (
                     pendingBookings.map(b => (
-                      <Link key={b.id} href={`/booking/${b.id}`} className="p-3 rounded-xl flex items-start gap-3 hover:bg-surface-container-low transition-colors border border-outline-variant/10 hover:border-outline-variant/30 group">
-                        <div className={`w-2 h-2 rounded-full mt-2 ${b.status === 'accepted' ? 'bg-blue-500' : 'bg-orange-400'}`}></div>
-                        <div className="flex-1 pb-1">
-                          <div className="flex justify-between items-start mb-1 gap-2">
-                            <p className="text-xs font-bold text-on-surface leading-tight transition-colors group-hover:text-primary">{b.lawyerName}</p>
-                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest ${b.status === 'accepted' ? 'text-blue-600 bg-blue-50' : 'text-orange-600 bg-orange-100'}`}>
-                              {b.status === 'accepted' ? 'Diterima' : 'Menunggu'}
-                            </span>
+                      <Link key={b.id} href={`/booking/${b.id}`} className="block group">
+                        <div className="bg-white p-4 rounded-xl border border-outline-variant/20 shadow-sm hover:shadow-md hover:border-primary/40 hover:scale-[1.02] transition-all duration-300 relative overflow-hidden">
+                          {b.status === 'accepted' && (
+                            <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-bl-full pointer-events-none"></div>
+                          )}
+                          <div className="flex justify-between items-start mb-3">
+                            <div className="flex items-center gap-3">
+                               <div className={`w-10 h-10 rounded-lg flex items-center justify-center border shrink-0 ${b.status === 'accepted' ? 'bg-blue-50 border-blue-100 text-blue-600' : 'bg-orange-50 border-orange-100 text-orange-600'}`}>
+                                 <span className={`material-symbols-outlined text-xl ${b.status === 'pending' ? 'animate-pulse' : ''}`} style={b.status === 'accepted' ? {fontVariationSettings: "'FILL' 1"} : {}}>
+                                   {b.status === 'accepted' ? 'verified' : 'hourglass_empty'}
+                                 </span>
+                               </div>
+                               <div>
+                                 <p className="text-sm font-extrabold text-on-surface leading-tight group-hover:text-primary transition-colors">{b.lawyerName || "Pengacara"}</p>
+                                 <p className="text-[10px] text-on-surface-variant uppercase tracking-widest mt-0.5">{b.topic}</p>
+                               </div>
+                            </div>
                           </div>
-                          <p className="text-[10px] font-extrabold text-on-surface-variant mb-0.5 uppercase tracking-widest truncate max-w-[150px]">{b.topic}</p>
+                          <div className="flex justify-between items-center pt-3 border-t border-outline-variant/10">
+                            <div className="flex flex-col">
+                              <span className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant/70">Status</span>
+                              <span className={`text-[10px] font-bold ${b.status === 'accepted' ? 'text-blue-600' : 'text-orange-600'}`}>
+                                {b.status === 'accepted' ? 'Sesi Diterima' : 'Menunggu Respons'}
+                              </span>
+                            </div>
+                            {b.scheduled_at ? (
+                              <div className="flex flex-col text-right">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-primary/70">Jadwal Sesi</span>
+                                <span className="text-[10px] font-bold text-primary">{new Date(b.scheduled_at).toLocaleDateString('id-ID', {day:'numeric', month:'short'})} • {new Date(b.scheduled_at).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col text-right">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant/70">Tipe Layanan</span>
+                                <span className="text-[10px] font-bold text-on-surface-variant">Sesi Instan</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </Link>
                     ))
@@ -310,7 +345,7 @@ export default function ClientDashboardPage() {
               {/* Riwayat Konsultasi */}
               <section className="bg-white p-6 rounded-2xl border border-outline-variant/30 shadow-sm border-t-4 border-t-primary animate-in fade-in slide-in-from-right-6 duration-700 delay-300 fill-mode-both">
                 <h3 className="text-lg font-headline font-extrabold text-on-surface tracking-tight mb-5 border-b border-outline-variant/20 pb-3">Riwayat Konsultasi</h3>
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {completedBookings.length === 0 ? (
                      <div className="flex flex-col items-center justify-center py-8 text-center">
                       <div className="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center mb-3 opacity-40">
@@ -321,14 +356,40 @@ export default function ClientDashboardPage() {
                     </div>
                   ) : (
                     completedBookings.slice(0, 5).map(b => (
-                      <Link key={b.id} href={`/booking/${b.id}`} className="bg-surface-container-low/50 p-4 rounded-xl border border-outline-variant/20 flex justify-between items-center group hover:bg-primary/5 transition-colors hover:border-primary/20">
-                        <div>
-                          <p className="text-xs font-bold text-on-surface group-hover:text-primary transition-colors">{b.lawyerName}</p>
-                          <p className="text-[10px] text-on-surface-variant mt-1 font-medium">{formatDate(b.createdAt)} • {b.status === 'completed' ? 'Selesai' : 'Dibatalkan'}</p>
+                      <Link key={b.id} href={`/booking/${b.id}`} className="block group">
+                        <div className="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant/20 shadow-sm hover:shadow-md hover:border-primary/30 hover:scale-[1.01] transition-all duration-300 flex justify-between items-center relative overflow-hidden">
+                          {b.status === 'completed' && (
+                            <div className="absolute top-0 right-0 w-16 h-16 bg-green-500/5 rounded-bl-full pointer-events-none"></div>
+                          )}
+                          <div className="flex items-center gap-4">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm border ${b.status === 'completed' ? 'bg-gradient-to-br from-green-50 to-green-100 border-green-200 text-green-700' : 'bg-gradient-to-br from-red-50 to-red-100 border-red-200 text-red-700'}`}>
+                              <span className="material-symbols-outlined text-lg" style={{fontVariationSettings: "'FILL' 1"}}>
+                                {b.status === 'completed' ? 'check_circle' : 'cancel'}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-sm font-extrabold text-on-surface leading-tight group-hover:text-primary transition-colors">{b.lawyerName || `Kasus #${b.id.slice(-4)}`}</p>
+                              <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mt-1.5 flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-[10px]">schedule</span>
+                                {formatDate(b.createdAt)} 
+                                <span className="text-outline-variant/50">•</span> 
+                                <span className={b.status === 'completed' ? 'text-green-600' : 'text-red-600'}>
+                                  {b.status === 'completed' ? 'Selesai' : 'Batal'}
+                                </span>
+                              </p>
+                            </div>
+                          </div>
+                          <div className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center group-hover:bg-primary/10 transition-colors shrink-0">
+                            <span className="material-symbols-outlined text-outline-variant text-sm group-hover:text-primary transition-colors">chevron_right</span>
+                          </div>
                         </div>
-                        <span className="material-symbols-outlined text-outline-variant group-hover:text-primary group-hover:translate-x-1 transition-all">chevron_right</span>
                       </Link>
                     ))
+                  )}
+                  {completedBookings.length > 5 && (
+                    <Link href="/dashboard/appointments" className="block text-center pt-2">
+                      <span className="text-xs font-bold text-primary hover:text-[#680b00] uppercase tracking-widest transition-colors">Lihat Seluruhnya</span>
+                    </Link>
                   )}
                 </div>
               </section>
@@ -369,7 +430,6 @@ export default function ClientDashboardPage() {
             </div>
           </div>
         </footer>
-      </div>
-    </div>
+    </>
   );
 }

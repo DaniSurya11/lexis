@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, useCallback } from "react";
-import DashboardSidebar from "@/components/DashboardSidebar";
+
 import { validateChangePassword, passwordStrength } from "@/lib/validation";
 
 export default function ChangePasswordPage() {
@@ -81,10 +81,8 @@ export default function ChangePasswordPage() {
   );
 
   return (
-    <div className="flex min-h-screen bg-surface w-full">
-      <DashboardSidebar role="client" />
+    <>
 
-      <div className="md:pl-64 flex-1 flex flex-col min-h-screen">
         <main className="flex-1 p-8 pt-16 md:pt-8 max-w-4xl mx-auto w-full space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
 
           {/* Back + Title */}
@@ -268,7 +266,6 @@ export default function ChangePasswordPage() {
             Security Gateway • Lexis Premium Center • {new Date().getFullYear()}
           </p>
         </footer>
-      </div>
-    </div>
+    </>
   );
 }

@@ -12,10 +12,16 @@ export default function CheckoutPage() {
   const router = useRouter();
   const supabase = createClient();
   const [lawyer, setLawyer] = useState(null);
+  const [schedules, setSchedules] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Scheduling State
+  const [bookingType, setBookingType] = useState('instant'); // 'instant' | 'scheduled'
+  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedTime, setSelectedTime] = useState('');
+
   useEffect(() => {
-    const fetchLawyer = async () => {
+    const fetchLawyerAndSchedules = async () => {
       try {
         const { data, error } = await supabase
           .from('lawyers')
@@ -35,7 +41,17 @@ export default function CheckoutPage() {
             specialty: data.specialization,
             image: data.profiles.avatar_url || "https://via.placeholder.com/150",
             price: data.price_per_hour?.toLocaleString('id-ID') || "0",
+            isOnline: data.is_available
           });
+
+          // Fetch schedules
+          const { data: scheds } = await supabase
+            .from('lawyer_schedules')
+            .select('*')
+            .eq('lawyer_id', params.id)
+            .eq('is_active', true);
+          
+          setSchedules(scheds || []);
         }
       } catch (err) {
         console.error("Error fetching lawyer for checkout:", err);
@@ -44,7 +60,7 @@ export default function CheckoutPage() {
       }
     };
 
-    fetchLawyer();
+    fetchLawyerAndSchedules();
   }, [params.id, supabase]);
 
   if (isLoading) {
@@ -82,9 +98,48 @@ export default function CheckoutPage() {
     }).format(number);
   };
 
+  // Schedule Logic
+  const getMinDate = () => {
+    const today = new Date();
+    today.setDate(today.getDate() + 1); // Besok (lokal)
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  let dayOfWeek = -1;
+  if (selectedDate) {
+    const [year, month, day] = selectedDate.split('-');
+    dayOfWeek = new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).getDay();
+  }
+
+  const availableScheduleForDate = selectedDate 
+    ? schedules.find(s => s.day_of_week === dayOfWeek) 
+    : null;
+
+  const getTimeSlots = () => {
+    if (!availableScheduleForDate) return [];
+    const slots = [];
+    let current = parseInt(availableScheduleForDate.start_time.split(':')[0]);
+    const end = parseInt(availableScheduleForDate.end_time.split(':')[0]);
+    while (current < end) {
+      slots.push(`${current.toString().padStart(2, '0')}:00`);
+      current++;
+    }
+    return slots;
+  };
+  const timeSlots = getTimeSlots();
+
+  const isScheduleValid = bookingType === 'instant' || (bookingType === 'scheduled' && selectedDate && selectedTime);
+
+  // Convert local date/time to ISO string for backend
+  const scheduledAt = bookingType === 'scheduled' && selectedDate && selectedTime 
+    ? new Date(`${selectedDate}T${selectedTime}:00`).toISOString() 
+    : null;
+
   return (
     <main className="flex-grow flex flex-col items-center justify-center py-12 px-4 bg-stone-50 min-h-[calc(100vh-80px)]">
-      {/* Payment Card */}
       <div className="w-full max-w-2xl bg-white rounded-xl shadow-[0_10px_25px_-5px_rgba(0,0,0,0.05),0_8px_10px_-6px_rgba(0,0,0,0.05)] border-t-4 border-primary overflow-hidden">
         
         {/* Header: Back Link */}
@@ -160,6 +215,91 @@ export default function CheckoutPage() {
             </div>
           </section>
 
+          {/* Tipe Konsultasi Section (Hibrida) */}
+          <section>
+            <h2 className="text-xs font-black text-primary uppercase tracking-[0.2em] mb-4">Tipe Layanan</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <button 
+                onClick={() => setBookingType('instant')}
+                className={`p-4 rounded-xl border-2 text-left transition-all ${bookingType === 'instant' ? 'border-primary bg-primary/5' : 'border-outline-variant/20 bg-white hover:border-outline-variant/40'}`}
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <span className={`material-symbols-outlined ${bookingType === 'instant' ? 'text-primary' : 'text-on-surface-variant/50'}`}>bolt</span>
+                  <span className={`font-bold text-sm ${bookingType === 'instant' ? 'text-primary' : 'text-on-surface-variant'}`}>Konsultasi Sekarang</span>
+                </div>
+                <p className="text-xs text-on-surface-variant leading-relaxed">Terhubung langsung dengan pengacara dalam hitungan menit.</p>
+                {!lawyer.isOnline && (
+                  <p className="text-[10px] text-error font-bold mt-2 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[12px]">warning</span>
+                    Pengacara sedang offline, respon mungkin lebih lama.
+                  </p>
+                )}
+              </button>
+
+              <button 
+                onClick={() => setBookingType('scheduled')}
+                className={`p-4 rounded-xl border-2 text-left transition-all ${bookingType === 'scheduled' ? 'border-primary bg-primary/5' : 'border-outline-variant/20 bg-white hover:border-outline-variant/40'}`}
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <span className={`material-symbols-outlined ${bookingType === 'scheduled' ? 'text-primary' : 'text-on-surface-variant/50'}`}>calendar_month</span>
+                  <span className={`font-bold text-sm ${bookingType === 'scheduled' ? 'text-primary' : 'text-on-surface-variant'}`}>Jadwalkan Konsultasi</span>
+                </div>
+                <p className="text-xs text-on-surface-variant leading-relaxed">Pilih hari dan jam tertentu untuk sesi konsultasi Anda.</p>
+              </button>
+            </div>
+
+            {/* Calendar UI jika memilih Scheduled */}
+            {bookingType === 'scheduled' && (
+              <div className="mt-4 p-5 bg-surface-container-lowest border border-outline-variant/20 rounded-xl animate-in fade-in slide-in-from-top-4 duration-300">
+                <h3 className="text-sm font-bold text-on-surface mb-4">Pilih Tanggal & Waktu</h3>
+                
+                {schedules.length === 0 ? (
+                  <div className="bg-error/10 text-error p-3 rounded-lg text-xs font-medium flex items-start gap-2">
+                    <span className="material-symbols-outlined text-sm mt-0.5">error</span>
+                    <p>Maaf, pengacara ini belum mengatur jadwal praktik mingguan. Silakan gunakan layanan "Konsultasi Sekarang".</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                      <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Pilih Tanggal</label>
+                      <input 
+                        type="date" 
+                        min={getMinDate()}
+                        value={selectedDate}
+                        onChange={(e) => {
+                          setSelectedDate(e.target.value);
+                          setSelectedTime(''); // Reset time when date changes
+                        }}
+                        className="w-full border border-outline-variant/30 rounded-lg p-2.5 text-sm font-medium focus:border-primary outline-none"
+                      />
+                      {selectedDate && !availableScheduleForDate && (
+                        <p className="text-[10px] text-error mt-1.5 font-medium flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[12px]">info</span>
+                          Pengacara libur pada hari ini.
+                        </p>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Pilih Waktu</label>
+                      <select 
+                        value={selectedTime}
+                        onChange={(e) => setSelectedTime(e.target.value)}
+                        disabled={!selectedDate || !availableScheduleForDate}
+                        className="w-full border border-outline-variant/30 rounded-lg p-2.5 text-sm font-medium focus:border-primary outline-none disabled:bg-surface-container disabled:text-on-surface-variant/40"
+                      >
+                        <option value="">-- Pilih Jam --</option>
+                        {timeSlots.map(time => (
+                          <option key={time} value={time}>{time} WIB</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+
           {/* Metode Pembayaran Section */}
           <section>
             <h2 className="text-xs font-black text-primary uppercase tracking-[0.2em] mb-4">Metode Pembayaran</h2>
@@ -176,34 +316,6 @@ export default function CheckoutPage() {
                     <p className="text-[10px] text-on-surface-variant font-medium">Gopay, OVO, Dana, LinkAja</p>
                   </div>
                   <span className="material-symbols-outlined text-primary" style={{fontVariationSettings: "'FILL' 1"}}>check_circle</span>
-                </div>
-              </label>
-
-              {/* Bank BCA */}
-              <label className="relative flex items-center p-4 cursor-pointer rounded-xl border border-stone-200 bg-white hover:border-outline-variant transition-all">
-                <input className="hidden" name="payment" type="radio" value="bca" />
-                <div className="flex items-center gap-4 w-full">
-                  <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-[10px] font-black text-blue-800 border border-blue-100">
-                    BCA
-                  </div>
-                  <div className="flex-grow">
-                    <p className="font-bold text-on-surface text-sm text-opacity-80">Transfer Bank BCA</p>
-                    <p className="text-[10px] text-on-surface-variant font-medium">Verifikasi Otomatis</p>
-                  </div>
-                </div>
-              </label>
-
-              {/* Bank Mandiri */}
-              <label className="relative flex items-center p-4 cursor-pointer rounded-xl border border-stone-200 bg-white hover:border-outline-variant transition-all">
-                <input className="hidden" name="payment" type="radio" value="mandiri" />
-                <div className="flex items-center gap-4 w-full">
-                  <div className="w-10 h-10 rounded-lg bg-yellow-50 flex items-center justify-center text-[10px] font-black text-yellow-700 border border-yellow-100">
-                    MDR
-                  </div>
-                  <div className="flex-grow">
-                    <p className="font-bold text-on-surface text-sm text-opacity-80">Bank Mandiri</p>
-                    <p className="text-[10px] text-on-surface-variant font-medium">Proses Instan</p>
-                  </div>
                 </div>
               </label>
             </div>
@@ -227,26 +339,20 @@ export default function CheckoutPage() {
           </section>
 
           {/* Action Button & Footer Info */}
-          <div className="space-y-6 pt-4">
-            
-            <ClientPaymentFlow lawyer={lawyer} />
+          <div className="space-y-6 pt-4 relative">
+            {!isScheduleValid && (
+              <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-xl"></div>
+            )}
+            <ClientPaymentFlow lawyer={lawyer} scheduledAt={scheduledAt} />
             
             <div className="flex flex-col items-center gap-4">
               <div className="flex items-center gap-2 text-on-surface-variant/70">
                 <span className="material-symbols-outlined text-base">lock</span>
                 <p className="text-[10px] font-bold uppercase tracking-widest">Pembayaran Aman &amp; Terenkripsi</p>
               </div>
-              <p className="text-[9px] text-center uppercase tracking-[0.3em] font-bold text-on-surface-variant/40">Estimasi Proses: Instan</p>
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Minimal Trust Quote */}
-      <div className="mt-12 max-w-lg text-center px-6">
-        <p className="text-stone-400 font-headline font-medium text-sm leading-relaxed">
-          &quot;Keadilan bukan hanya tentang hasil akhir, melainkan tentang ketepatan struktur dan transparansi dokumen yang mengawal setiap langkah Anda.&quot;
-        </p>
       </div>
     </main>
   );

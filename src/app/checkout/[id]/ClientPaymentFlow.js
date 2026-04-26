@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useConsultation } from "@/context/ConsultationContext";
 import SuccessModal from "@/components/SuccessModal";
 
-export default function ClientPaymentFlow({ lawyer }) {
+export default function ClientPaymentFlow({ lawyer, scheduledAt = null }) {
   const router = useRouter();
   const [showPopup, setShowPopup] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -23,7 +23,7 @@ export default function ClientPaymentFlow({ lawyer }) {
     setIsProcessing(true);
 
     try {
-      const bookingId = await createBooking(lawyer);
+      const bookingId = await createBooking(lawyer, "Konsultasi Hukum", scheduledAt);
       
       if (bookingId) {
         setShowPopup(true);

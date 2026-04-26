@@ -27,9 +27,16 @@ export async function middleware(request) {
     }
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let user = null
+  try {
+    const { data, error } = await supabase.auth.getUser()
+    if (!error) {
+      user = data.user
+    }
+  } catch (err) {
+    // Supabase server unreachable (e.g., Docker not running) — continue without auth
+    console.warn('[Middleware] Supabase unreachable:', err.message)
+  }
 
   const { pathname } = request.nextUrl
   

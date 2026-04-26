@@ -2,22 +2,27 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase";
 
 export default function ConsultationButton({ lawyerId, price, isFloating = false }) {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const [isAuth, setIsAuth] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    const supabase = createClient();
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        setIsAuth(!!session);
+      })
+      .catch(() => {
+        setIsAuth(false);
+      });
   }, []);
 
   const handleClick = () => {
-    const hasAuthCookie = document.cookie
-      .split("; ")
-      .some((row) => row.startsWith("lexis_auth="));
-    const isAuth = localStorage.getItem("isAuthenticated") === "true";
-    
-    if (hasAuthCookie || isAuth) {
+    if (isAuth) {
       router.push(`/checkout/${lawyerId}`);
     } else {
       router.push('/login');

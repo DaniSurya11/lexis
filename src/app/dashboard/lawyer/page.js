@@ -4,18 +4,21 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import DashboardSidebar from "@/components/DashboardSidebar";
+
+import NotificationsDropdown from "@/components/NotificationsDropdown";
 import { useConsultation } from "@/context/ConsultationContext";
 import { createClient } from "@/lib/supabase";
 
 export default function LawyerDashboardPage() {
   const router = useRouter();
-  const { bookings, sessions, acceptBooking, rejectBooking, startSession, endSession, reloadBookings } = useConsultation();
+  const { bookings = [], sessions = [], startSession, acceptBooking, rejectBooking, endSession, reloadBookings } = useConsultation();
   const [processingId, setProcessingId] = useState(null);
   const [mounted, setMounted] = useState(false);
+  const [now, setNow] = useState(new Date());
   const [lawyerName, setLawyerName] = useState("Panel Pengacara");
   const [lawyerTitle, setLawyerTitle] = useState("Senior Partner");
   const [lawyerAvatar, setLawyerAvatar] = useState("https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png");
+  const [userId, setUserId] = useState(null);
   const supabase = createClient();
 
   // Hydration Guard + Load user info
@@ -24,29 +27,39 @@ export default function LawyerDashboardPage() {
     if (reloadBookings) reloadBookings();
 
     const loadLawyerInfo = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        // Fetch profile AND lawyer specialization
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('full_name, avatar_url, lawyers(specialization)')
-          .eq('id', user.id)
-          .single();
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setUserId(user.id);
+          // Fetch profile AND lawyer specialization
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name, avatar_url, lawyers(specialization)')
+            .eq('id', user.id)
+            .single();
+            
+          if (profile?.full_name) setLawyerName(profile.full_name);
+          if (profile?.avatar_url) setLawyerAvatar(profile.avatar_url);
           
-        if (profile?.full_name) setLawyerName(profile.full_name);
-        if (profile?.avatar_url) setLawyerAvatar(profile.avatar_url);
-        
-        // Cek jika ada data specialization di join lawyers
-        if (profile?.lawyers?.[0]?.specialization) {
-           setLawyerTitle(profile.lawyers[0].specialization);
-        } else if (profile?.lawyers?.specialization) {
-           // Tergantung bagaimana PostgREST mengembalikan 1:1 join
-           setLawyerTitle(profile.lawyers.specialization);
+          // Cek jika ada data specialization di join lawyers
+          if (profile?.lawyers?.[0]?.specialization) {
+             setLawyerTitle(profile.lawyers[0].specialization);
+          } else if (profile?.lawyers?.specialization) {
+             // Tergantung bagaimana PostgREST mengembalikan 1:1 join
+             setLawyerTitle(profile.lawyers.specialization);
+          }
         }
+      } catch (err) {
+        console.warn("Failed to load lawyer info:", err.message);
       }
     };
     loadLawyerInfo();
   }, [reloadBookings, supabase]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Jika belum mounted (SSR), return null untuk menghindari hydration error
   if (!mounted) return null;
@@ -81,12 +94,8 @@ export default function LawyerDashboardPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-surface w-full font-body text-on-surface">
-      {/* DashboardSidebar — Reusable with mobile support */}
-      <DashboardSidebar role="lawyer" />
+    <>
 
-      {/* Main Content Area */}
-      <main className="md:pl-64 flex-1 flex flex-col min-h-screen">
         <header className="bg-surface/80 backdrop-blur-md font-headline tracking-tight font-bold top-0 sticky z-30 border-b border-outline-variant/30 mt-14 md:mt-0">
           <div className="flex justify-between items-center w-full px-8 py-4">
             <div className="flex items-center gap-8">
@@ -114,15 +123,10 @@ export default function LawyerDashboardPage() {
             </div>
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-4">
-                <button className="text-on-surface-variant hover:bg-surface-container-low p-2 rounded-full transition-colors relative" aria-label="Notifikasi">
-                  <span className="material-symbols-outlined" aria-hidden="true">notifications</span>
-                  {pendingBookings.length > 0 && (
-                    <span className="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full animate-bounce" aria-label="Ada booking baru"></span>
-                  )}
-                </button>
-                <button className="text-on-surface-variant hover:bg-surface-container-low p-2 rounded-full transition-colors" aria-label="Pengaturan">
+                <NotificationsDropdown userId={userId} />
+                <Link href="/dashboard/profile" className="text-on-surface-variant hover:bg-surface-container-low p-2 rounded-full transition-colors" aria-label="Pengaturan">
                   <span className="material-symbols-outlined" aria-hidden="true">settings</span>
-                </button>
+                </Link>
               </div>
               <div className="flex items-center gap-4 pl-6 border-l border-outline-variant/30">
                 <div className="text-right hidden sm:block">
@@ -249,26 +253,47 @@ export default function LawyerDashboardPage() {
                   </div>
                   
                   <div className="grid gap-4">
-                    {acceptedBookings.map(b => (
-                      <div key={b.id} className="bg-white p-5 rounded-xl border border-outline-variant/30 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-primary/30 transition-all">
-                        <div className="flex gap-4 items-center">
-                           <div className="w-10 h-10 bg-primary/10 text-primary flex items-center justify-center font-bold rounded-lg border border-primary/20">
-                              CL
-                           </div>
-                           <div>
-                              <p className="font-extrabold text-sm">Booking #{b.id.slice(-6)}</p>
-                              <p className="text-[10px] text-on-surface-variant uppercase tracking-widest mt-0.5">{b.topic} • {formatDate(b.created_at)}</p>
-                           </div>
+                    {acceptedBookings.map(b => {
+                      const schedDate = b.scheduled_at ? new Date(b.scheduled_at) : null;
+                      let isLocked = false;
+                      let timeRemainingStr = '';
+                      
+                      if (schedDate) {
+                        const diffMs = schedDate.getTime() - now.getTime();
+                        if (diffMs > 5 * 60000) { // lebih dari 5 menit
+                          isLocked = true;
+                          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                          const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                          const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                          if (diffDays > 0) timeRemainingStr = `Mulai dlm ${diffDays} Hari`;
+                          else if (diffHours > 0) timeRemainingStr = `Mulai dlm ${diffHours} Jam`;
+                          else timeRemainingStr = `Mulai dlm ${diffMins} Mnt`;
+                        }
+                      }
+
+                      return (
+                        <div key={b.id} className="bg-white p-5 rounded-xl border border-outline-variant/30 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-primary/30 transition-all">
+                          <div className="flex gap-4 items-center">
+                             <div className="w-10 h-10 bg-primary/10 text-primary flex items-center justify-center font-bold rounded-lg border border-primary/20">
+                                CL
+                             </div>
+                             <div>
+                                <p className="font-extrabold text-sm">Booking #{b.id.slice(-6)}</p>
+                                <p className="text-[10px] text-on-surface-variant uppercase tracking-widest mt-0.5">
+                                  {b.topic} • {schedDate ? schedDate.toLocaleString('id-ID', {day: 'numeric', month: 'short', hour: '2-digit', minute:'2-digit'}) + ' WIB' : 'Instan'}
+                                </p>
+                             </div>
+                          </div>
+                          <button 
+                            disabled={processingId === b.id || isLocked}
+                            onClick={() => handleAction(b.id, startSession)}
+                            className={`${isLocked ? 'bg-surface-container-high text-on-surface-variant cursor-not-allowed' : 'bg-primary hover:bg-primary-container text-white shadow-sm active:scale-95'} text-xs font-bold py-2.5 px-6 rounded-lg uppercase tracking-widest transition-all w-full md:w-auto disabled:opacity-50`}
+                          >
+                            {processingId === b.id ? 'Memulai Sesi...' : isLocked ? timeRemainingStr : 'Mulai Sesi'}
+                          </button>
                         </div>
-                        <button 
-                          disabled={processingId === b.id}
-                          onClick={() => handleAction(b.id, startSession)}
-                          className="bg-primary hover:bg-primary-container text-white text-xs font-bold py-2.5 px-6 rounded-lg uppercase tracking-widest shadow-sm active:scale-95 transition-all w-full md:w-auto disabled:opacity-50"
-                        >
-                          {processingId === b.id ? 'Memulai Sesi...' : 'Mulai Sesi'}
-                        </button>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </section>
               )}
@@ -329,11 +354,11 @@ export default function LawyerDashboardPage() {
               </section>
 
               {/* Quick Riwayat */}
-              <section className="bg-surface-container-lowest p-6 rounded-2xl space-y-6 border border-outline-variant/30 shadow-sm border-t-4 border-t-outline-variant animate-in fade-in slide-in-from-right-6 duration-700 delay-500 fill-mode-both">
+              <section className="bg-white p-6 rounded-2xl space-y-6 border border-outline-variant/30 shadow-sm border-t-4 border-t-outline-variant animate-in fade-in slide-in-from-right-6 duration-700 delay-500 fill-mode-both">
                 <div className="pb-3 border-b border-outline-variant/20">
                   <h2 className="text-lg font-headline font-extrabold text-on-surface mb-1">Riwayat Konsultasi</h2>
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {completedBookings.length === 0 ? (
                     <div className="text-center py-6 opacity-30">
                        <span className="material-symbols-outlined text-3xl mb-1">history</span>
@@ -341,14 +366,40 @@ export default function LawyerDashboardPage() {
                     </div>
                   ) : (
                     completedBookings.slice(0, 4).map(b => (
-                      <div key={b.id} className="bg-surface-container-low p-3 rounded-xl border border-outline-variant/10 text-xs hover:border-primary/20 transition-all cursor-default text-ellipsis overflow-hidden">
-                        <p className="font-bold text-on-surface mb-1 truncate">Kasus ({b.id.slice(-6)})</p>
-                        <p className="text-[10px] text-on-surface-variant uppercase tracking-widest">{formatDate(b.createdAt)} • Selesai</p>
-                      </div>
+                      <Link key={b.id} href={`/booking/${b.id}`} className="block group">
+                        <div className="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant/20 shadow-sm hover:shadow-md hover:border-primary/30 hover:scale-[1.01] transition-all duration-300 flex justify-between items-center relative overflow-hidden">
+                          {b.status === 'completed' && (
+                            <div className="absolute top-0 right-0 w-16 h-16 bg-green-500/5 rounded-bl-full pointer-events-none"></div>
+                          )}
+                          <div className="flex items-center gap-4">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm border ${b.status === 'completed' ? 'bg-gradient-to-br from-green-50 to-green-100 border-green-200 text-green-700' : 'bg-gradient-to-br from-red-50 to-red-100 border-red-200 text-red-700'}`}>
+                              <span className="material-symbols-outlined text-lg" style={{fontVariationSettings: "'FILL' 1"}}>
+                                {b.status === 'completed' ? 'check_circle' : 'cancel'}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-sm font-extrabold text-on-surface leading-tight group-hover:text-primary transition-colors">{b.clientName || `Klien #${b.id.slice(-4)}`}</p>
+                              <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mt-1.5 flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-[10px]">schedule</span>
+                                {formatDate(b.createdAt)} 
+                                <span className="text-outline-variant/50">•</span> 
+                                <span className={b.status === 'completed' ? 'text-green-600' : 'text-red-600'}>
+                                  {b.status === 'completed' ? 'Selesai' : 'Batal'}
+                                </span>
+                              </p>
+                            </div>
+                          </div>
+                          <div className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center group-hover:bg-primary/10 transition-colors shrink-0">
+                            <span className="material-symbols-outlined text-outline-variant text-sm group-hover:text-primary transition-colors">chevron_right</span>
+                          </div>
+                        </div>
+                      </Link>
                     ))
                   )}
                   {completedBookings.length > 4 && (
-                    <button className="w-full text-xs text-primary font-bold hover:underline mt-2">Lihat Seluruhnya</button>
+                    <Link href="/dashboard/appointments" className="block text-center pt-2">
+                      <span className="text-xs font-bold text-primary hover:text-[#680b00] uppercase tracking-widest transition-colors">Lihat Seluruhnya</span>
+                    </Link>
                   )}
                 </div>
               </section>
@@ -389,7 +440,6 @@ export default function LawyerDashboardPage() {
             </div>
           </div>
         </footer>
-      </main>
-    </div>
+    </>
   );
 }

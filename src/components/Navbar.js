@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import LogoutAction from "./LogoutAction";
+import { createClient } from "@/lib/supabase";
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -13,33 +14,46 @@ export default function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const isHome = pathname === "/";
 
+  // Use Supabase's real auth state listener for reliable auth detection
   useEffect(() => {
-    // Function to check if authenticated via cookie
-    const checkAuth = () => {
-      const hasAuthCookie = document.cookie
-        .split("; ")
-        .some((row) => row.startsWith("lexis_auth="));
-      
-      const hasAuthStorage = localStorage.getItem("isAuthenticated") === "true";
-      
-      // Sync: if cookie exists but storage doesn't (or vice versa), we update
-      setIsAuth(hasAuthCookie || hasAuthStorage);
-    };
+    const supabase = createClient();
+    let subscription = null;
 
+    // Check initial auth state
+    const checkAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        setIsAuth(!!session);
+      } catch {
+        setIsAuth(false);
+      }
+    };
     checkAuth();
 
-    // Scroll physics for transparent to glassmorphism transition
+    // Listen for auth state changes (login, logout, token refresh)
+    try {
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
+        setIsAuth(!!session);
+      });
+      subscription = data.subscription;
+    } catch {
+      // Supabase unreachable — ignore
+    }
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, []);
+
+  // Scroll physics for transparent to glassmorphism transition
+  useEffect(() => {
     const handleScroll = () => {
-      if (window.scrollY > 20) {
-        setIsScrolled(true);
-      } else {
-        setIsScrolled(false);
-      }
+      setIsScrolled(window.scrollY > 20);
     };
 
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
-  }, [pathname]); // Re-evaluate when route changes
+  }, []);
 
   const navClasses = "bg-surface border-b border-surface-container-high text-primary font-['Manrope'] font-bold tracking-tight top-0 sticky transition-all duration-300 z-50 py-2.5";
 

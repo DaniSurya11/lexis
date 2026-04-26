@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
-import DashboardSidebar from "@/components/DashboardSidebar";
+
 import ComingSoonAction from "@/components/ComingSoonAction";
 import { createClient } from "@/lib/supabase";
 
@@ -15,12 +15,15 @@ export default function UserProfilePage() {
     email: "",
     phone: "",
     address: "",
-    interests: ["Corporate Law", "Digital Property", "Venture Capital"]
+    avatar: "",
+    interests: ["Hukum Perdata", "Properti Digital", "Venture Capital"]
   });
 
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [avatarSrc, setAvatarSrc] = useState("https://lh3.googleusercontent.com/aida-public/AB6AXuCWlCtSg7SfE1nmkRnz5Gd67AR34YiyFumONQx0kShYfm-299M9SDgxdqfT9SvatbbkkqMffptBh6w_WeSInKunkJ8lGPpy9Ibpbk63QHvSBOSpEDcp4_F4X3oxckM_iwvtG49B3-DvCP139_7x3NRgJmRQ0osWqT6u6qTVzxoEGPxFYYKtSQVtGHjxdKLuAybXS67m8Jv7msHaT0S1eg_DI6n95AZe98-kgNOy3BfncI7ov9EAxUQ91G_sYvaR_Z3D7fCh4gZkmng");
+  const [userRole, setUserRole] = useState("client");
+  const [userReviews, setUserReviews] = useState([]);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -28,6 +31,16 @@ export default function UserProfilePage() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
+
+        // Cek apakah user adalah pengacara
+        const { data: lawyerData } = await supabase
+          .from('lawyers')
+          .select('id')
+          .eq('id', user.id)
+          .single();
+        if (lawyerData) {
+          setUserRole("lawyer");
+        }
 
         const { data: profile } = await supabase
           .from('profiles')
@@ -40,10 +53,21 @@ export default function UserProfilePage() {
           email: user.email || "",
           phone: profile?.phone || "",
           address: profile?.city || "",
-          interests: ["Corporate Law", "Digital Property", "Venture Capital"]
+          avatar: profile?.avatar_url || "",
+          interests: ["Hukum Perdata", "Properti Digital", "Venture Capital"]
         });
 
         if (profile?.avatar_url) setAvatarSrc(profile.avatar_url);
+
+        // Fetch user reviews if client
+        if (profile?.role === 'client') {
+          const { data: reviews } = await supabase
+            .from('reviews')
+            .select('*, lawyers(full_name)')
+            .eq('client_id', user.id)
+            .order('created_at', { ascending: false });
+          setUserReviews(reviews || []);
+        }
       } catch (e) {
         console.error("Failed to load profile:", e);
       } finally {
@@ -59,23 +83,28 @@ export default function UserProfilePage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: formData.name,
-          city: formData.address,
-          updated_at: new Date(),
-        })
-        .eq('id', user.id);
+      const updates = {
+        id: user.id,
+        full_name: formData.name,
+        phone: formData.phone,
+        city: formData.address,
+        updated_at: new Date()
+      };
 
+      const { error } = await supabase.from('profiles').upsert(updates);
       if (error) throw error;
+      
       setIsEditing(false);
     } catch (e) {
-      console.error("Failed to save profile:", e);
-      alert("Gagal menyimpan profil: " + e.message);
+      console.error("Error saving profile:", e);
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleEditToggle = () => {
@@ -95,11 +124,8 @@ export default function UserProfilePage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-surface w-full">
-      <DashboardSidebar role="client" />
+    <>
 
-      {/* Main Content Area */}
-      <div className="md:pl-64 flex-1 flex flex-col min-h-screen">
         <main className="flex-1 p-8 max-w-5xl mx-auto w-full space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
           
           {/* Header Section */}
@@ -137,10 +163,12 @@ export default function UserProfilePage() {
               <div className="flex items-center justify-center md:justify-start gap-4 mb-2">
                 <h1 className="text-3xl font-headline font-black text-on-surface tracking-tight">{formData.name}</h1>
                 <span className="bg-tertiary/10 text-tertiary px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-tertiary/20 shadow-sm shadow-tertiary/10">
-                  Premium Member
+                  {userRole === 'lawyer' ? 'Advokat Partner' : 'Member Premium'}
                 </span>
               </div>
-              <p className="text-on-surface-variant font-medium opacity-70 mb-6 italic">Pengusaha & Investor Teknologi</p>
+              <p className="text-on-surface-variant font-medium opacity-70 mb-6 italic">
+                {formData.address ? `${formData.address}` : "Lokasi belum diatur"}
+              </p>
               
               <div className="flex flex-wrap justify-center md:justify-start gap-6">
                 <div className="flex items-center gap-2 text-xs font-bold text-on-surface-variant">
@@ -196,16 +224,20 @@ export default function UserProfilePage() {
                     <label className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant/60 ml-1">Nomor Telepon</label>
                     <input 
                       disabled={!isEditing}
+                      name="phone"
                       className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl px-4 py-3 text-sm font-bold focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all disabled:opacity-70" 
                       value={formData.phone} 
+                      onChange={handleChange}
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant/60 ml-1">Domisili</label>
                     <input 
                       disabled={!isEditing}
+                      name="address"
                       className="w-full bg-surface-container-low border border-outline-variant/20 rounded-xl px-4 py-3 text-sm font-bold focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all disabled:opacity-70" 
                       value={formData.address} 
+                      onChange={handleChange}
                     />
                   </div>
                 </div>
@@ -251,26 +283,50 @@ export default function UserProfilePage() {
                 <p className="mt-8 text-[10px] font-bold text-white/60 uppercase tracking-widest">Digunakan untuk personalisasi rekomendasi pengacara.</p>
               </section>
 
-              <section className="bg-white p-8 rounded-3xl border border-outline-variant/30 shadow-sm border-t-4 border-t-outline">
-                <h3 className="text-xl font-headline font-black text-on-surface tracking-tight mb-6">Paket Langganan</h3>
-                <div className="text-center py-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 mb-6">
-                   <p className="text-[10px] font-black uppercase tracking-widest text-outline mb-1">Status Aktif</p>
-                   <p className="text-2xl font-headline font-black text-primary tracking-tighter">LEXIS GOLD</p>
-                </div>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-on-surface-variant">Berlaku hingga</span>
-                    <span className="font-black text-on-surface">12 Des 2026</span>
+              {userRole === 'lawyer' ? (
+                <section className="bg-white p-8 rounded-3xl border border-outline-variant/30 shadow-sm border-t-4 border-t-primary">
+                  <h3 className="text-xl font-headline font-black text-on-surface tracking-tight mb-6">Jadwal Kerja</h3>
+                  <div className="text-center py-6 bg-surface-container-low rounded-2xl border border-outline-variant/10 mb-6 flex flex-col items-center">
+                     <span className="material-symbols-outlined text-4xl text-primary mb-2">event_available</span>
+                     <p className="text-[10px] font-black uppercase tracking-widest text-outline mb-1">Status Ketersediaan</p>
+                     <p className="text-xl font-headline font-black text-primary tracking-tighter">AKTIF</p>
                   </div>
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-on-surface-variant">Kuota Menit</span>
-                    <span className="font-black text-on-surface">120 / 300 Min</span>
+                  <Link href="/dashboard/lawyer/schedule" className="block w-full text-center bg-primary text-white font-black text-[10px] py-3 rounded-xl uppercase tracking-widest transition-all hover:bg-primary-container hover:scale-[1.02] shadow-sm hover:shadow">
+                    Atur Jadwal
+                  </Link>
+                </section>
+              ) : (
+                <section className="bg-white p-8 rounded-3xl border border-outline-variant/30 shadow-sm border-t-4 border-t-tertiary">
+                  <h3 className="text-xl font-headline font-black text-on-surface tracking-tight mb-6 flex items-center justify-between">
+                    Riwayat Ulasan
+                    <span className="bg-tertiary/10 text-tertiary text-[10px] px-2 py-0.5 rounded-full">{userReviews.length}</span>
+                  </h3>
+                  <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                    {userReviews.length === 0 ? (
+                      <div className="text-center py-8 bg-surface-container-low rounded-2xl border border-dotted border-outline-variant/30">
+                        <span className="material-symbols-outlined text-3xl text-on-surface-variant/30 mb-2">rate_review</span>
+                        <p className="text-[10px] font-bold text-on-surface-variant italic">Belum ada ulasan yang diberikan</p>
+                      </div>
+                    ) : (
+                      userReviews.map((rev, i) => (
+                        <div key={i} className="p-4 bg-surface-container-lowest rounded-xl border border-outline-variant/10 hover:border-tertiary/30 transition-all">
+                          <div className="flex justify-between items-start mb-2">
+                            <p className="text-[10px] font-black uppercase text-on-surface tracking-wide truncate max-w-[120px]">
+                              {rev.lawyers?.full_name || "Advokat"}
+                            </p>
+                            <div className="flex gap-0.5">
+                              {[...Array(5)].map((_, star) => (
+                                <span key={star} className={`material-symbols-outlined text-[10px] ${star < rev.rating ? 'text-amber-500' : 'text-outline/30'}`} style={{fontVariationSettings: "'FILL' 1"}}>star</span>
+                              ))}
+                            </div>
+                          </div>
+                          <p className="text-[11px] text-on-surface-variant italic line-clamp-2 leading-relaxed">"{rev.comment}"</p>
+                        </div>
+                      ))
+                    )}
                   </div>
-                  <ComingSoonAction className="w-full mt-4 bg-surface-container-low hover:bg-surface-container-high text-primary font-black text-[10px] py-3 rounded-xl uppercase tracking-widest transition-all border border-outline-variant/30">
-                    Kelola Langganan
-                  </ComingSoonAction>
-                </div>
-              </section>
+                </section>
+              )}
             </div>
           </div>
         </main>
@@ -306,7 +362,6 @@ export default function UserProfilePage() {
             </div>
           </div>
         </footer>
-      </div>
-    </div>
+    </>
   );
 }

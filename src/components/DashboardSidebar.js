@@ -17,10 +17,23 @@ import { useConsultation } from "@/context/ConsultationContext";
  * Props:
  *   - role: "client" | "lawyer" (default: "client")
  */
-export default function DashboardSidebar({ role = "client" }) {
+export default function DashboardSidebar({ role: initialRole }) {
   const pathname = usePathname();
   const { sessions } = useConsultation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [role, setRole] = useState(initialRole || "client");
+
+  // Detect role if not provided
+  useEffect(() => {
+    if (!initialRole) {
+      const storedRole = localStorage.getItem("userRole");
+      if (storedRole) {
+        setRole(storedRole);
+      }
+    } else {
+      setRole(initialRole);
+    }
+  }, [initialRole]);
 
   const allActiveSessions = sessions.filter((s) => s.status === "active");
   const activeSession = allActiveSessions.length > 0;
@@ -95,12 +108,13 @@ export default function DashboardSidebar({ role = "client" }) {
         </Link>
 
         {/* Janji Temu */}
-        <Link className={navItemClass("#")} href="#" aria-label="Janji Temu — segera hadir">
-          <span className="material-symbols-outlined" aria-hidden="true">calendar_today</span>
+        <Link 
+          className={navItemClass(role === "lawyer" ? "/dashboard/lawyer/appointments" : "/dashboard/appointments")} 
+          href={role === "lawyer" ? "/dashboard/lawyer/appointments" : "/dashboard/appointments"} 
+          aria-current={isActive(role === "lawyer" ? "/dashboard/lawyer/appointments" : "/dashboard/appointments") ? "page" : undefined}
+        >
+          <span className="material-symbols-outlined" aria-hidden="true" style={isActive(role === "lawyer" ? "/dashboard/lawyer/appointments" : "/dashboard/appointments") ? { fontVariationSettings: "'FILL' 1" } : {}}>calendar_today</span>
           <span>Janji Temu</span>
-          <span className="ml-auto text-[9px] font-black bg-outline-variant/30 text-on-surface-variant px-1.5 py-0.5 rounded uppercase tracking-wider" aria-label="Segera hadir">
-            Segera
-          </span>
         </Link>
 
         {/* Profil */}
@@ -119,15 +133,17 @@ export default function DashboardSidebar({ role = "client" }) {
           <span>Profil</span>
         </Link>
 
-        {/* Pengacara Only: Booking Masuk */}
+
+
+        {/* Pengacara Only: Jadwal Kerja */}
         {role === "lawyer" && (
           <Link
-            className={navItemClass("/dashboard/lawyer/inbox")}
-            href="/dashboard/lawyer/inbox"
-            aria-current={isActive("/dashboard/lawyer/inbox") ? "page" : undefined}
+            className={navItemClass("/dashboard/lawyer/schedule")}
+            href="/dashboard/lawyer/schedule"
+            aria-current={isActive("/dashboard/lawyer/schedule") ? "page" : undefined}
           >
-            <span className="material-symbols-outlined" aria-hidden="true">inbox</span>
-            <span>Booking Masuk</span>
+            <span className="material-symbols-outlined" aria-hidden="true">event_available</span>
+            <span>Jadwal Kerja</span>
           </Link>
         )}
       </nav>

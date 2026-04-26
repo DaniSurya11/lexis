@@ -28,7 +28,7 @@ export default function EndSessionAction({ sessionId, onSessionEnd }) {
     setShowConfirm(false);
   };
 
-  const confirmFinish = () => {
+  const confirmFinish = async () => {
     if (isFinished) return;
     
     setShowConfirm(false);
@@ -37,7 +37,11 @@ export default function EndSessionAction({ sessionId, onSessionEnd }) {
     // Call the callback to prevent the parent's guard from triggering an error toast
     if (onSessionEnd) onSessionEnd();
     
-    endSession(sessionId);
+    try {
+      await endSession(sessionId);
+    } catch (err) {
+      console.error("Error ending session:", err);
+    }
 
     // Redirect after 2.0 seconds to the transitional page
     setTimeout(() => {

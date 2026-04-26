@@ -33,11 +33,20 @@ export default function ChatSessionPage() {
   // 1. Fetch Current User
   useEffect(() => {
     const fetchUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setCurrentUser(user);
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error || !user) {
+          router.push("/login");
+          return;
+        }
+        setCurrentUser(user);
+      } catch (err) {
+        console.error("Failed to fetch user:", err);
+        router.push("/login");
+      }
     };
     fetchUser();
-  }, [supabase]);
+  }, [supabase, router]);
 
   // 2. Fetch Opponent Info dynamically
   useEffect(() => {

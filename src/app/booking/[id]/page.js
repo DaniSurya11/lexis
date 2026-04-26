@@ -15,6 +15,12 @@ export default function BookingDetailPage() {
   const { bookings } = useConsultation();
   const [booking, setBooking] = useState(null);
   const [lawyerInfo, setLawyerInfo] = useState(null);
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   const bookingId = params.id;
 
@@ -112,8 +118,8 @@ export default function BookingDetailPage() {
                    </div>
                    <div className="absolute inset-0 w-full h-full border-2 border-orange-400 rounded-full animate-ping opacity-20"></div>
                 </div>
-                <h1 className="font-headline text-3xl font-extrabold tracking-tight text-on-surface mb-2">Menunggu Pengacara</h1>
-                <p className="text-on-surface-variant text-sm max-w-sm mx-auto leading-relaxed">Pengacara sedang meninjau permintaan Anda. Sesi akan otomatis aktif setelah pengacara bersedia dan masuk ke dalam ruangan.</p>
+                <h1 className="font-headline text-3xl font-extrabold tracking-tight text-on-surface mb-2">Menunggu Dimulai</h1>
+                <p className="text-on-surface-variant text-sm max-w-sm mx-auto leading-relaxed">Sesi akan otomatis aktif setelah pengacara bersedia dan masuk ke dalam ruangan. Pastikan Anda kembali ke halaman ini pada waktu yang ditentukan.</p>
               </div>
             ) : isActive ? (
                <div className="flex flex-col items-center animate-in zoom-in duration-300">
@@ -162,18 +168,51 @@ export default function BookingDetailPage() {
                         <span className="text-[9px] font-extrabold uppercase tracking-widest text-on-surface-variant opacity-70">Waktu Order</span>
                         <span className="text-xs font-bold text-on-surface mt-0.5">{appointmentDate} • {appointmentTime} WIB</span>
                      </div>
+                     {booking.scheduled_at && (
+                       <div className="flex flex-col pl-4 border-l border-outline-variant/30">
+                          <span className="text-[9px] font-extrabold uppercase tracking-widest text-primary opacity-80">Jadwal Sesi</span>
+                          <span className="text-xs font-bold text-primary mt-0.5">{new Date(booking.scheduled_at).toLocaleString('id-ID', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'})} WIB</span>
+                       </div>
+                     )}
                   </div>
                  </div>
               </div>
             </div>
             
             <div className="bg-surface-container-lowest p-6 border-t border-outline-variant/20 flex flex-col md:flex-row items-center justify-between gap-4">
-               {isPending ? (
-                  <div className="flex items-center gap-3 w-full bg-orange-50 px-4 py-3 rounded-xl border border-orange-200">
-                     <span className="material-symbols-outlined shrink-0 text-orange-500 animate-spin">refresh</span>
-                     <p className="text-xs text-orange-800 font-medium">Halaman otomatis diperbarui saat pengacara memulai sesi...</p>
-                  </div>
-               ) : isActive ? (
+               {isPending ? (() => {
+                  let isLocked = false;
+                  let timeRemainingStr = '';
+                  if (booking.scheduled_at) {
+                    const schedDate = new Date(booking.scheduled_at);
+                    const diffMs = schedDate.getTime() - now.getTime();
+                    if (diffMs > 5 * 60000) {
+                      isLocked = true;
+                      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                      const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                      const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                      if (diffDays > 0) timeRemainingStr = `dalam ${diffDays} Hari`;
+                      else if (diffHours > 0) timeRemainingStr = `dalam ${diffHours} Jam`;
+                      else timeRemainingStr = `dalam ${diffMins} Menit`;
+                    }
+                  }
+                  
+                  if (isLocked) {
+                    return (
+                      <div className="flex items-center gap-3 w-full bg-blue-50 px-4 py-3 rounded-xl border border-blue-200">
+                         <span className="material-symbols-outlined shrink-0 text-blue-500">calendar_clock</span>
+                         <p className="text-xs text-blue-800 font-medium">Sesi terjadwal. Ruang obrolan akan aktif {timeRemainingStr}.</p>
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <div className="flex items-center gap-3 w-full bg-orange-50 px-4 py-3 rounded-xl border border-orange-200">
+                       <span className="material-symbols-outlined shrink-0 text-orange-500 animate-spin">refresh</span>
+                       <p className="text-xs text-orange-800 font-medium">Halaman otomatis diperbarui saat pengacara memulai sesi...</p>
+                    </div>
+                  );
+               })() : isActive ? (
                   <Link href={`/chat/${booking.lawyer_id}`} className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-[#680b00] text-white py-4 rounded-xl font-bold text-base shadow-lg shadow-primary/20 hover:translate-y-[-2px] active:translate-y-[0] transition-all duration-200 group">
                     <span>Masuk Ruang Obrolan</span>
                     <span className="material-symbols-outlined text-lg group-hover:translate-x-1 transition-transform">arrow_forward</span>

@@ -20,7 +20,8 @@ export default function LawyerDetailPage() {
           .from('lawyers')
           .select(`
             *,
-            profiles(full_name, avatar_url, city)
+            profiles(full_name, avatar_url, city),
+            reviews(rating, comment, created_at, profiles(full_name))
           `)
           .eq('id', params.id)
           .single();
@@ -33,7 +34,8 @@ export default function LawyerDetailPage() {
             name: data.profiles.full_name,
             specialty: data.specialization,
             rating: data.rating || 0,
-            reviews: 0,
+            reviews: data.reviews?.length || 0,
+            reviewsList: data.reviews || [],
             experience: "5+ Tahun",
             city: data.profiles.city || "Jakarta",
             image: data.profiles.avatar_url || "https://via.placeholder.com/400",
@@ -216,27 +218,37 @@ export default function LawyerDetailPage() {
           <section className="bg-white p-8 rounded-2xl border border-outline-variant/30 shadow-sm hover:shadow-md transition-shadow reveal">
             <div className="flex justify-between items-center mb-6 border-b border-outline-variant/20 pb-4">
               <h2 className="text-xl font-extrabold text-brand-blue font-headline tracking-tight">Ulasan Klien ({lawyer.reviews})</h2>
-              <span className="text-primary font-black text-[10px] uppercase tracking-widest cursor-pointer hover:bg-primary/5 px-3 py-1.5 rounded-lg transition-colors border border-transparent hover:border-primary/20">Lihat Semua</span>
+              {lawyer.reviews > 0 && (
+                <span className="text-primary font-black text-[10px] uppercase tracking-widest cursor-pointer hover:bg-primary/5 px-3 py-1.5 rounded-lg transition-colors border border-transparent hover:border-primary/20">Lihat Semua</span>
+              )}
             </div>
             <div className="space-y-4">
-              <div className="p-5 bg-surface-container-low/50 rounded-xl border border-outline-variant/30">
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-3 gap-y-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className="font-extrabold text-brand-blue font-headline text-sm">Client Terverifikasi</span>
-                      <span className="flex items-center gap-1 bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest border border-green-200">
-                        <span className="material-symbols-outlined text-[10px]" style={{fontVariationSettings: "'FILL' 1"}}>verified</span> 
-                        Terverifikasi
-                      </span>
+              {lawyer.reviewsList && lawyer.reviewsList.length > 0 ? (
+                lawyer.reviewsList.slice(0, 5).map((review, idx) => (
+                  <div key={idx} className="p-5 bg-surface-container-low/50 rounded-xl border border-outline-variant/30">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-3 gap-y-3">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span className="font-extrabold text-brand-blue font-headline text-sm">{review.profiles?.full_name || 'Klien Anonim'}</span>
+                          <span className="flex items-center gap-1 bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest border border-green-200">
+                            <span className="material-symbols-outlined text-[10px]" style={{fontVariationSettings: "'FILL' 1"}}>verified</span> 
+                            Terverifikasi
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-on-surface-variant/70 font-bold uppercase tracking-widest">
+                          {new Date(review.created_at).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
+                        </p>
+                      </div>
+                      <div className="flex text-outline -ml-1 sm:ml-0">
+                        {[1, 2, 3, 4, 5].map(s => <span key={s} className={`material-symbols-outlined text-sm ${s <= review.rating ? 'text-yellow-400' : ''}`} style={{fontVariationSettings: s <= review.rating ? "'FILL' 1" : "'FILL' 0"}}>star</span>)}
+                      </div>
                     </div>
-                    <p className="text-[10px] text-on-surface-variant/70 font-bold uppercase tracking-widest">2 hari yang lalu</p>
+                    {review.comment && <p className="text-sm text-on-surface-variant leading-relaxed font-body italic">"{review.comment}"</p>}
                   </div>
-                  <div className="flex text-outline -ml-1 sm:ml-0">
-                    {[1, 2, 3, 4, 5].map(s => <span key={s} className="material-symbols-outlined text-sm" style={{fontVariationSettings: "'FILL' 1"}}>star</span>)}
-                  </div>
-                </div>
-                <p className="text-sm text-on-surface-variant leading-relaxed font-body italic">"Penanganan kasus sengketa dilakukan dengan sangat profesional dan transparan. Pendekatannya sangat memuaskan."</p>
-              </div>
+                ))
+              ) : (
+                <div className="text-center py-6 text-sm text-on-surface-variant/60 italic">Belum ada ulasan untuk pengacara ini.</div>
+              )}
             </div>
           </section>
 

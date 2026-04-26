@@ -119,6 +119,8 @@ export default function LawyerWizardPage() {
           {
             id: authData.user.id,
             full_name: formData.fullname,
+            phone: formData.phone,
+            city: formData.office_address,
             role: 'lawyer',
             updated_at: new Date(),
           }

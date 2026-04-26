@@ -29,8 +29,13 @@ export default function LogoutAction({ children, className }) {
   const confirmLogout = async () => {
     setShowConfirm(false);
 
-    // Sign out dari Supabase (menghapus sesi & cookies)
-    await supabase.auth.signOut();
+    try {
+      // Sign out dari Supabase (menghapus sesi & cookies)
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error("Logout error:", err);
+      // Continue with logout even if signOut fails (e.g., network error)
+    }
 
     // Bersihkan localStorage fallback
     localStorage.removeItem("isAuthenticated");

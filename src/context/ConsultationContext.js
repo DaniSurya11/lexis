@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 
 const ConsultationContext = createContext();
 
@@ -9,7 +9,12 @@ export const useConsultation = () => useContext(ConsultationContext);
 import { createClient } from '@/lib/supabase';
 
 export const ConsultationProvider = ({ children }) => {
-  const supabase = createClient();
+  const supabaseRef = useRef(null);
+  if (!supabaseRef.current) {
+    supabaseRef.current = createClient();
+  }
+  const supabase = supabaseRef.current;
+
   const [bookings, setBookings] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [toast, setToast] = useState(null);
@@ -17,11 +22,15 @@ export const ConsultationProvider = ({ children }) => {
   // Load data from Supabase
   const loadData = useCallback(async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        // Not logged in or error fetching session — clear state silently
+        setBookings([]);
+        setSessions([]);
+        return;
+      }
 
       const userId = session.user.id;
-      const userRole = session.user.user_metadata?.role;
 
       // Fetch bookings
       const { data: bookingsData, error: bookingsError } = await supabase
@@ -38,7 +47,7 @@ export const ConsultationProvider = ({ children }) => {
         .order('created_at', { ascending: false });
 
       if (bookingsError) throw bookingsError;
-      setBookings(bookingsData);
+      setBookings(bookingsData || []);
 
       // Fetch active sessions
       const { data: sessionsData, error: sessionsError } = await supabase
@@ -47,28 +56,62 @@ export const ConsultationProvider = ({ children }) => {
         .order('started_at', { ascending: false });
 
       if (sessionsError) throw sessionsError;
-      setSessions(sessionsData);
+      setSessions(sessionsData || []);
 
       console.log("[Context] Data loaded from Supabase");
     } catch (err) {
-      console.error("[Context] Failed to load data:", err);
+      // Network failures (Supabase down, Docker not running, etc.)
+      // Silently ignore — don't crash the app
+      console.warn("[Context] Failed to load data:", err.message);
     }
   }, [supabase]);
 
   useEffect(() => {
     loadData();
 
-    // Subscribe to real-time updates for bookings
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, payload => {
-        console.log('Change received!', payload);
-        loadData();
-      })
-      .subscribe();
+    let subscription = null;
+    try {
+      // Listen for auth state changes to reload data on login / clear on logout
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_OUT') {
+          setBookings([]);
+          setSessions([]);
+        } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          loadData();
+        }
+      });
+      subscription = data.subscription;
+    } catch (err) {
+      console.warn("[Context] Failed to set up auth listener:", err.message);
+    }
+
+    // Subscribe to real-time updates for bookings and sessions
+    let channel = null;
+    try {
+      channel = supabase
+        .channel('schema-db-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, payload => {
+          console.log('[Realtime] Booking change received!', payload);
+          loadData();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, payload => {
+          console.log('[Realtime] Session change received!', payload);
+          loadData();
+        })
+        .subscribe();
+    } catch (err) {
+      console.warn("[Context] Failed to set up realtime:", err.message);
+    }
 
     return () => {
-      supabase.removeChannel(channel);
+      subscription?.unsubscribe();
+      if (channel) {
+        try {
+          supabase.removeChannel(channel);
+        } catch (err) {
+          // ignore cleanup errors
+        }
+      }
     };
   }, [loadData, supabase]);
 
@@ -80,7 +123,7 @@ export const ConsultationProvider = ({ children }) => {
   }, []);
 
   // Actions
-  const createBooking = async (lawyer, topic = "Konsultasi Hukum") => {
+  const createBooking = async (lawyer, topic = "Konsultasi Hukum", scheduledAt = null) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Silakan login terlebih dahulu");
@@ -93,12 +136,21 @@ export const ConsultationProvider = ({ children }) => {
             lawyer_id: lawyer.id,
             topic: topic,
             status: 'pending',
+            scheduled_at: scheduledAt
           }
         ])
         .select()
         .single();
 
       if (error) throw error;
+      
+      // Kirim Notifikasi ke Pengacara
+      await supabase.from('notifications').insert([{
+        user_id: lawyer.id,
+        title: "Booking Baru",
+        message: "Ada klien baru yang menjadwalkan konsultasi dengan Anda.",
+        link_url: "/dashboard/lawyer"
+      }]);
       
       showToast("Booking berhasil dibuat!", "success");
       return data.id;
@@ -123,6 +175,17 @@ export const ConsultationProvider = ({ children }) => {
         await loadData();
         throw error;
       }
+      
+      const booking = bookings.find(b => b.id === bookingId);
+      if (booking) {
+        await supabase.from('notifications').insert([{
+          user_id: booking.client_id || booking.clientId, // Tergantung mapping
+          title: "Booking Diterima",
+          message: "Pengacara telah menerima booking konsultasi Anda.",
+          link_url: "/dashboard"
+        }]);
+      }
+      
       await loadData();
       showToast("Booking diterima!", "success");
     } catch (err) {
@@ -138,6 +201,17 @@ export const ConsultationProvider = ({ children }) => {
         .eq('id', bookingId);
 
       if (error) throw error;
+      
+      const booking = bookings.find(b => b.id === bookingId);
+      if (booking) {
+        await supabase.from('notifications').insert([{
+          user_id: booking.client_id || booking.clientId,
+          title: "Booking Ditolak",
+          message: "Mohon maaf, pengacara tidak dapat menerima booking Anda saat ini.",
+          link_url: "/dashboard"
+        }]);
+      }
+      
       await loadData();
       showToast("Booking ditolak.", "info");
     } catch (err) {
@@ -193,15 +267,15 @@ export const ConsultationProvider = ({ children }) => {
 
       if (fetchError) throw fetchError;
 
-      // 2. Update session
+      // 2. Update session — DB constraint allows only 'active' and 'finished'
       const { error: sessionError } = await supabase
         .from('sessions')
-        .update({ status: 'completed', ended_at: new Date() })
+        .update({ status: 'finished', ended_at: new Date() })
         .eq('id', sessionId);
 
       if (sessionError) throw sessionError;
 
-      // 3. Update booking
+      // 3. Update booking — DB constraint allows 'pending','accepted','rejected','completed'
       const { error: bookingError } = await supabase
         .from('bookings')
         .update({ status: 'completed' })
