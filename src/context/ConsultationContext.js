@@ -90,11 +90,34 @@ export const ConsultationProvider = ({ children }) => {
     try {
       channel = supabase
         .channel('schema-db-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, payload => {
-          console.log('[Realtime] Booking change received!', payload);
-          // Beri jeda sedikit untuk memastikan data di Cloud sudah committed
-          setTimeout(() => loadData(), 500);
-        })
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'bookings' },
+          (payload) => {
+            console.log('REALTIME BOOKING:', payload);
+
+            const newData = payload.new;
+            const oldData = payload.old;
+
+            if (payload.eventType === 'INSERT') {
+              setBookings(prev => [newData, ...prev]);
+            }
+
+            if (payload.eventType === 'UPDATE') {
+              setBookings(prev =>
+                prev.map(b =>
+                  b.id === newData.id ? { ...b, ...newData } : b
+                )
+              );
+            }
+
+            if (payload.eventType === 'DELETE') {
+              setBookings(prev =>
+                prev.filter(b => b.id !== oldData.id)
+              );
+            }
+          }
+        )
         .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, payload => {
           console.log('[Realtime] Session change received!', payload);
           setTimeout(() => loadData(), 500);
