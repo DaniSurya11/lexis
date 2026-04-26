@@ -1,1 +1,1 @@
-ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
+npx supabase db dump -f dump.sql

@@ -92,11 +92,12 @@ export const ConsultationProvider = ({ children }) => {
         .channel('schema-db-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, payload => {
           console.log('[Realtime] Booking change received!', payload);
-          loadData();
+          // Beri jeda sedikit untuk memastikan data di Cloud sudah committed
+          setTimeout(() => loadData(), 500);
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, payload => {
           console.log('[Realtime] Session change received!', payload);
-          loadData();
+          setTimeout(() => loadData(), 500);
         })
         .subscribe();
     } catch (err) {
